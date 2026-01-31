@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TJMG Anonymizer - Anonimização de Documentos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">🔒</div>
+                <div class="logo-text">
+                    <h1>TJMG Anonymizer</h1>
+                    <span>Pipeline de Anonimização de Documentos</span>
+                </div>
+            </div>
+            <div class="header-badge">
+                <span class="badge">Resolução 615/CNJ</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Upload Section -->
+            <section class="upload-section glass-card">
+                <div class="section-header">
+                    <h2>📤 Upload de Documento</h2>
+                    <p>Envie seu PDF ou DOCX para análise e anonimização</p>
+                </div>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📄</div>
+                    <h3>Arraste seu arquivo aqui</h3>
+                    <p>ou <span class="upload-link">clique para selecionar</span></p>
+                    <input type="file" id="fileInput" accept=".pdf,.docx" hidden>
+                    <div class="upload-formats">
+                        <span class="format-tag">PDF</span>
+                        <span class="format-tag">DOCX</span>
+                    </div>
+                </div>
+
+                <!-- File Info -->
+                <div class="file-info hidden" id="fileInfo">
+                    <div class="file-icon">📎</div>
+                    <div class="file-details">
+                        <span class="file-name" id="fileName">documento.pdf</span>
+                        <span class="file-size" id="fileSize">2.5 MB</span>
+                    </div>
+                    <button class="btn-icon" id="removeFile" title="Remover arquivo">✕</button>
+                </div>
+
+                <!-- Metadata Form -->
+                <div class="metadata-form hidden" id="metadataForm">
+                    <h4>Metadados do Processo (Opcional)</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="classeProcessual">Classe Processual</label>
+                            <input type="text" id="classeProcessual" placeholder="Ex: Ação Civil Pública">
+                        </div>
+                        <div class="form-group">
+                            <label for="vara">Vara</label>
+                            <input type="text" id="vara" placeholder="Ex: 1ª Vara Cível">
+                        </div>
+                        <div class="form-group">
+                            <label for="comarca">Comarca</label>
+                            <input type="text" id="comarca" placeholder="Ex: Belo Horizonte">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons hidden" id="actionButtons">
+                    <button class="btn btn-secondary" id="btnAnalyze">
+                        <span class="btn-icon">🔍</span>
+                        Analisar
+                    </button>
+                    <button class="btn btn-primary" id="btnAnonymize">
+                        <span class="btn-icon">🔒</span>
+                        Anonimizar
+                    </button>
+                </div>
+            </section>
+
+            <!-- Progress Section -->
+            <section class="progress-section glass-card hidden" id="progressSection">
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <h3 id="progressTitle">Processando documento...</h3>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p class="progress-status" id="progressStatus">Extraindo texto do documento</p>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section glass-card hidden" id="resultsSection">
+                <div class="section-header">
+                    <h2>📊 Resultados da Análise</h2>
+                    <span class="job-id" id="jobId">Job: ---</span>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📄</div>
+                        <div class="stat-value" id="statPages">0</div>
+                        <div class="stat-label">Páginas</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🎯</div>
+                        <div class="stat-value" id="statIdentified">0</div>
+                        <div class="stat-label">Identificados</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔒</div>
+                        <div class="stat-value" id="statRedacted">0</div>
+                        <div class="stat-label">Anonimizados</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏱️</div>
+                        <div class="stat-value" id="statTime">0ms</div>
+                        <div class="stat-label">Tempo</div>
+                    </div>
+                </div>
+
+                <!-- Sensitive Data List -->
+                <div class="data-list">
+                    <h4>Dados Sensíveis Identificados</h4>
+                    <div class="data-table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Valor (Mascarado)</th>
+                                    <th>Página</th>
+                                    <th>Confiança</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dataTableBody">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Download Section -->
+                <div class="download-section" id="downloadSection">
+                    <button class="btn btn-success btn-large" id="btnDownload">
+                        <span class="btn-icon">⬇️</span>
+                        Baixar PDF Anonimizado
+                    </button>
+                    <div class="hash-info">
+                        <div class="hash-item">
+                            <span class="hash-label">Hash Original:</span>
+                            <code id="hashOriginal">---</code>
+                        </div>
+                        <div class="hash-item">
+                            <span class="hash-label">Hash Anonimizado:</span>
+                            <code id="hashAnonymized">---</code>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>TJMG Anonymizer Pipeline v1.0.0 | Conformidade com Resolução 615/CNJ</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
