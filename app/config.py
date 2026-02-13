@@ -19,17 +19,21 @@ class Settings(BaseSettings):
     OCR_DPI: int = 300
     OCR_LANGUAGE: str = "por"
     OCR_CONFIDENCE_THRESHOLD: int = 60
+    OCR_ENGINE: str = "tesseract"  # 'tesseract' | 'paddle'
     
-    # NLP
+    # NLP / NER
     SPACY_MODEL: str = "pt_core_news_lg"
+    NER_ENGINE: str = "spacy"  # 'spacy' | 'transformer'
+    NER_TRANSFORMER_MODEL: str = "pierreguillou/bert-base-cased-pt-lenerbr"
     
     # Anonimização
     REDACTION_COLOR: tuple = (0, 0, 0)  # Preto
     REDACTION_TEXT: str = "[ANONIMIZADO]"
+    ANONYMIZATION_MODE: str = "redact"  # 'redact' | 'pseudonymize'
     
     # API
     API_PREFIX: str = "/api"
-    MAX_FILE_SIZE_MB: int = 100
+    MAX_FILE_SIZE_MB: int = 200
     ALLOWED_EXTENSIONS: set = {"pdf", "docx"}
     
     class Config:

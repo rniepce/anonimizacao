@@ -1,0 +1,5 @@
+# Optional dependencies for PaddleOCR
+# Install with: pip install -r requirements-paddle.txt
+
+paddlepaddle>=2.5.0
+paddleocr>=2.7.0

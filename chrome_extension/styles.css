@@ -1,0 +1,68 @@
+/* Global styles for injected elements */
+.tjmg-anonymizer-fab {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background-color: #2c3e50;
+    border-radius: 50%;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 999999;
+    transition: transform 0.2s, background-color 0.2s;
+    border: 2px solid #3498db;
+}
+
+.tjmg-anonymizer-fab:hover {
+    transform: scale(1.1);
+    background-color: #34495e;
+}
+
+.tjmg-anonymizer-fab svg {
+    width: 30px;
+    height: 30px;
+    fill: white;
+}
+
+.tjmg-anonymizer-fab.loading {
+    animation: pulse 1.5s infinite;
+    background-color: #f39c12;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(243, 156, 18, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(243, 156, 18, 0);
+    }
+}
+
+/* Tooltip */
+.tjmg-anonymizer-tooltip {
+    position: absolute;
+    bottom: 70px;
+    right: 0;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.tjmg-anonymizer-fab:hover .tjmg-anonymizer-tooltip {
+    opacity: 1;
+}

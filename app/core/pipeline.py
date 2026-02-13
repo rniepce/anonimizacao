@@ -2,11 +2,12 @@
 Pipeline principal de anonimização
 Orquestra todos os componentes do sistema
 """
+import logging
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 from app.config import settings
 from app.core.pdf_handler import pdf_handler, TextBlock
@@ -16,6 +17,8 @@ from app.core.ner_engine import ner_engine, NEREntity
 from app.core.allowlist import allowlist_manager
 from app.core.redactor import redactor, RedactionArea
 from app.audit.logger import audit_logger
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,19 +61,59 @@ class AnonymizationPipeline:
     3. Extração: Extrai texto com posições (direta ou OCR)
     4. Identificação: Regex + NER
     5. Filtro: Remove itens da allowlist
-    6. Anonimização: Aplica tarjas
+    6. Anonimização: Aplica tarjas ou pseudonimização
     7. Auditoria: Registra operação
     """
     
     def __init__(self):
-        pass
+        # Inicializar engines baseado nas configurações
+        self._ner_engine = None
+        self._ocr_engine = None
+        self._init_engines()
+    
+    def _init_engines(self):
+        """Inicializa os engines de NER e OCR baseado nas configurações."""
+        # NER Engine
+        if settings.NER_ENGINE == "transformer":
+            try:
+                from app.core.ner_transformer import NERTransformerEngine
+                self._ner_engine = NERTransformerEngine(
+                    model_name=settings.NER_TRANSFORMER_MODEL
+                )
+                if self._ner_engine.is_available:
+                    logger.info("Usando NER com Transformers (BERTimbau)")
+                else:
+                    self._ner_engine = None
+            except ImportError:
+                logger.warning("Transformers não disponível, usando SpaCy")
+        
+        if self._ner_engine is None:
+            self._ner_engine = ner_engine
+            logger.info("Usando NER com SpaCy")
+        
+        # OCR Engine
+        if settings.OCR_ENGINE == "paddle":
+            try:
+                from app.core.ocr_paddle import PaddleOCREngine
+                self._ocr_engine = PaddleOCREngine()
+                if self._ocr_engine.is_available:
+                    logger.info("Usando OCR com PaddleOCR")
+                else:
+                    self._ocr_engine = None
+            except ImportError:
+                logger.warning("PaddleOCR não disponível, usando Tesseract")
+        
+        if self._ocr_engine is None:
+            self._ocr_engine = ocr_engine
+            logger.info("Usando OCR com Tesseract")
     
     def process(
         self,
         input_path: Path,
         output_dir: Optional[Path] = None,
         usuario: Optional[str] = None,
-        ip_origem: Optional[str] = None
+        ip_origem: Optional[str] = None,
+        mode: Optional[str] = None  # 'redact' | 'pseudonymize'
     ) -> AnonymizationResult:
         """
         Processa um documento completo.
@@ -80,6 +123,7 @@ class AnonymizationPipeline:
             output_dir: Diretório de saída (default: mesmo do input)
             usuario: Usuário executando (para auditoria)
             ip_origem: IP de origem (para auditoria)
+            mode: Modo de anonimização ('redact' ou 'pseudonymize')
             
         Returns:
             AnonymizationResult com detalhes do processamento
@@ -87,11 +131,15 @@ class AnonymizationPipeline:
         start_time = time.time()
         job_id = str(uuid.uuid4())
         
+        # Definir modo de anonimização
+        anonymization_mode = mode or settings.ANONYMIZATION_MODE
+        
         # Definir caminho de saída
         if output_dir is None:
             output_dir = input_path.parent
         
-        output_path = output_dir / f"{input_path.stem}_anonimizado.pdf"
+        suffix = "_pseudonimizado" if anonymization_mode == "pseudonymize" else "_anonimizado"
+        output_path = output_dir / f"{input_path.stem}{suffix}.pdf"
         
         # 1. Obter informações do PDF
         pdf_info = pdf_handler.get_info(input_path)
@@ -129,7 +177,7 @@ class AnonymizationPipeline:
             else:
                 dados_anonimizar.append(item)
         
-        # 5. Aplicar anonimização
+        # 5. Aplicar anonimização (redact ou pseudonymize)
         areas = [
             RedactionArea(
                 pagina=item.pagina,
@@ -144,7 +192,10 @@ class AnonymizationPipeline:
         ]
         
         if areas:
-            stats = redactor.redact_pdf(input_path, output_path, areas)
+            if anonymization_mode == "pseudonymize":
+                stats = redactor.pseudonymize_pdf(input_path, output_path, areas, job_id)
+            else:
+                stats = redactor.redact_pdf(input_path, output_path, areas)
         else:
             # Se não há nada a anonimizar, apenas copiar e limpar metadados
             pdf_handler.remove_metadata(input_path, output_path)
@@ -261,22 +312,44 @@ class AnonymizationPipeline:
         text_items: list[TextBlock]
     ) -> list[SensitiveDataItem]:
         """
-        Identifica dados sensíveis usando Regex e NER.
-        
-        Args:
-            texto: Texto completo do documento
-            text_items: Itens de texto com posições
-            
-        Returns:
-            Lista de dados sensíveis com posições
+        Identifica dados sensíveis usando Regex, NER e Contexto Jurídico.
         """
         results = []
         
-        # 1. Busca por Regex
+        # 0. Análise de Cabeçalho (Header Parsing)
+        # Identifica partes (Autor/Réu) para anonimização agressiva
+        from app.core.context_validator import context_validator
+        priority_names = context_validator.analyze_header(texto)
+        
+        # Adicionar nomes do cabeçalho como alvos
+        for name in priority_names:
+            # Buscar ocorrências desse nome no texto
+            position = self._find_position_for_text(name, text_items)
+            if position:
+                # Tentar encontrar todas as ocorrências (simples busca textual aqui)
+                # Na implementação real, seria ideal um search_all nos text_items
+                results.append(SensitiveDataItem(
+                    tipo='PESSOA', # Assumimos pessoa/parte
+                    valor=name,
+                    pagina=position.pagina,
+                    x0=position.x0,
+                    y0=position.y0,
+                    x1=position.x1,
+                    y1=position.y1,
+                    confianca=0.95,
+                    fonte='header_analysis'
+                ))
+
+        # 1. Busca por Regex (CPF, CNPJ, OAB, etc)
         regex_matches = regex_matcher.find_all(texto)
         
         for match in regex_matches:
-            # Encontrar posição no documento
+            # Se for OAB, verificamos contexto (geralmente publico)
+            if match.tipo == 'OAB':
+                # OAB geralmente não se anonimiza, exceto se solicitado especificamente
+                # Vamos manter como detectado, mas o filtro posterior decide
+                pass 
+                
             position = self._find_position_for_text(match.valor, text_items)
             if position:
                 results.append(SensitiveDataItem(
@@ -287,7 +360,7 @@ class AnonymizationPipeline:
                     y0=position.y0,
                     x1=position.x1,
                     y1=position.y1,
-                    confianca=1.0,  # Regex tem alta confiança
+                    confianca=1.0,
                     fonte='regex'
                 ))
         
@@ -295,7 +368,22 @@ class AnonymizationPipeline:
         ner_entities = ner_engine.extract_entities(texto)
         
         for entity in ner_entities:
-            if entity.tipo in ('PESSOA', 'ENDERECO'):
+            # Validar contexto para Pessoas e Organizações
+            if entity.tipo in ('PESSOA', 'ORGANIZACAO', 'PESSOA', 'ORG', 'PER'):
+                # Usar o validador de contexto
+                decision = context_validator.validate(
+                    text=texto,
+                    entity_text=entity.texto,
+                    start_char=entity.inicio,
+                    end_char=entity.fim,
+                    entity_label=entity.tipo
+                )
+                
+                if not decision.should_anonymize:
+                    continue # Pula se o validador disse para manter visível
+                
+            # Se chegou aqui, é candidato a anonimização
+            if entity.tipo in ('PESSOA', 'ENDERECO', 'ORGANIZACAO'):
                 position = self._find_position_for_text(entity.texto, text_items)
                 if position:
                     results.append(SensitiveDataItem(
@@ -306,20 +394,29 @@ class AnonymizationPipeline:
                         y0=position.y0,
                         x1=position.x1,
                         y1=position.y1,
-                        confianca=0.85,  # NER tem confiança menor
-                        fonte='ner'
+                        confianca=0.85,
+                        fonte=f'ner'
                     ))
         
-        # Remover duplicatas (mesmo valor na mesma posição)
+        # Remover duplicatas e sobreposições
+        return self._deduplicate_results(results)
+
+    def _deduplicate_results(self, results: list[SensitiveDataItem]) -> list[SensitiveDataItem]:
+        """Remove duplicatas baseadas em posição e valor"""
         seen = set()
-        unique_results = []
+        unique = []
         for item in results:
-            key = (item.valor, item.pagina, round(item.x0), round(item.y0))
+            # Chave única aproximada (valor + pagina + coordenadas arredondadas)
+            key = (
+                item.valor.lower(), 
+                item.pagina, 
+                round(item.x0), 
+                round(item.y0)
+            )
             if key not in seen:
                 seen.add(key)
-                unique_results.append(item)
-        
-        return unique_results
+                unique.append(item)
+        return unique
     
     def _find_position_for_text(
         self,

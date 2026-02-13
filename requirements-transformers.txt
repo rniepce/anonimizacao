@@ -1,0 +1,5 @@
+# Optional dependencies for Transformers (BERTimbau NER)
+# Install with: pip install -r requirements-transformers.txt
+
+transformers>=4.36.0
+torch>=2.1.0

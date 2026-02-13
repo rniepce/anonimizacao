@@ -1,6 +1,8 @@
 """
 Rotas da API FastAPI
 """
+import asyncio
+import json
 import shutil
 import time
 import uuid
@@ -8,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.api.schemas import (
@@ -21,13 +23,14 @@ from app.api.schemas import (
 )
 from app.core.pipeline import pipeline
 from app.core.allowlist import allowlist_manager, AllowlistItem
+from app.core.progress import progress_manager
 from app.audit.logger import audit_logger
 
 
 router = APIRouter()
 
 
-def validate_file(file: UploadFile) -> None:
+def validate_file(file: UploadFile, content_length: int = 0) -> None:
     """Valida arquivo enviado"""
     if not file.filename:
         raise HTTPException(400, "Nome de arquivo não fornecido")
@@ -37,6 +40,14 @@ def validate_file(file: UploadFile) -> None:
         raise HTTPException(
             400,
             f"Extensão não permitida. Use: {settings.ALLOWED_EXTENSIONS}"
+        )
+    
+    # Verificar tamanho do arquivo
+    max_size = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+    if content_length > max_size:
+        raise HTTPException(
+            413,
+            f"Arquivo muito grande. Máximo: {settings.MAX_FILE_SIZE_MB}MB"
         )
 
 
@@ -105,9 +116,14 @@ async def anonymize_document(
     classe_processual: Optional[str] = Form(None),
     vara: Optional[str] = Form(None),
     comarca: Optional[str] = Form(None),
+    mode: Optional[str] = Form(None),  # 'redact' | 'pseudonymize'
 ):
     """
     Anonimiza um documento e retorna o PDF processado.
+    
+    Modos:
+    - redact: Aplica tarjas pretas (padrão)
+    - pseudonymize: Substitui por dados fake consistentes
     """
     validate_file(file)
     job_id = str(uuid.uuid4())
@@ -126,7 +142,8 @@ async def anonymize_document(
             input_path=input_path,
             output_dir=output_dir,
             usuario=None,
-            ip_origem=request.client.host if request.client else None
+            ip_origem=request.client.host if request.client else None,
+            mode=mode
         )
         
         # Retornar arquivo anonimizado
@@ -139,7 +156,8 @@ async def anonymize_document(
                 "X-Total-Redactions": str(len(result.dados_anonimizados)),
                 "X-Original-Hash": result.hash_original,
                 "X-Anonymized-Hash": result.hash_anonimizado,
-                "X-Processing-Time-Ms": str(result.tempo_processamento_ms)
+                "X-Processing-Time-Ms": str(result.tempo_processamento_ms),
+                "X-Anonymization-Mode": mode or settings.ANONYMIZATION_MODE
             }
         )
     
@@ -306,3 +324,53 @@ async def get_allowlist_stats():
     Retorna estatísticas da lista branca.
     """
     return allowlist_manager.get_stats()
+
+
+@router.get("/progress/{job_id}")
+async def stream_progress(job_id: str):
+    """
+    Stream de progresso em tempo real (Server-Sent Events).
+    
+    Uso no frontend:
+        const evtSource = new EventSource('/api/progress/{job_id}');
+        evtSource.onmessage = (e) => { console.log(JSON.parse(e.data)); };
+    """
+    async def event_generator():
+        queue = progress_manager.register_listener(job_id)
+        try:
+            while True:
+                try:
+                    # Aguardar update com timeout de 30s
+                    update = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(update.to_dict())}\n\n"
+                    
+                    # Se chegou a 100%, finalizar stream
+                    if update.porcentagem >= 100:
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                        break
+                except asyncio.TimeoutError:
+                    # Enviar heartbeat para manter conexão viva
+                    yield f": heartbeat\n\n"
+        finally:
+            progress_manager.unregister_listener(job_id, queue)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.get("/progress/{job_id}/status")
+async def get_progress_status(job_id: str):
+    """
+    Obtém status atual do progresso (polling alternativo ao SSE).
+    """
+    progress = progress_manager.get(job_id)
+    if not progress:
+        return {"status": "not_found", "job_id": job_id}
+    return progress.to_dict()

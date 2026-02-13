@@ -80,9 +80,14 @@ class Redactor:
                 # Criar retângulo de redação
                 rect = fitz.Rect(area.x0, area.y0, area.x1, area.y1)
                 
-                # Adicionar anotação de redação
-                annot = page.add_redact_annot(rect)
-                
+                # Adicionar anotação de redação (True Redaction)
+                # fill=preto, text=" " para garantir que não haja vazamento visual
+                annot = page.add_redact_annot(
+                    rect,
+                    text=" ", 
+                    fill=(0, 0, 0)
+                )
+
                 # Atualizar estatísticas
                 stats['total_redacoes'] += 1
                 
@@ -93,23 +98,128 @@ class Redactor:
                 if page_num not in stats['por_pagina']:
                     stats['por_pagina'][page_num] = 0
                 stats['por_pagina'][page_num] += 1
-            
+                
             # Aplicar as redações (remove o texto e desenha retângulo)
-            page.apply_redactions(
-                images=fitz.PDF_REDACT_IMAGE_PIXELS,  # Remove pixels de imagem também
-            )
+            # images=2 remove partes de imagens sob a tarja (crucial para assinaturas)
+            # graphics=2 remove vetores/linhas sob a tarja
+            page.apply_redactions(images=2, graphics=2)
+        
+        # Limpar metadados totalmente (Metadata Scrubbing)
+        doc.set_metadata({})
+        
+        # Salvar documento com Garbage Collection agressivo
+        doc.save(
+            str(output_path),
+            garbage=4,     # Reescreve eliminando objetos não utilizados
+            deflate=True,  # Comprime o arquivo
+            clean=True,    # Limpa estrutura interna
+        )
+        doc.close()
+        
+        return stats
+
+    def pseudonymize_pdf(
+        self,
+        input_path: Path,
+        output_path: Path,
+        areas: list[RedactionArea],
+        job_id: str = None
+    ) -> dict:
+        """
+        Substitui dados sensíveis por dados fake consistentes.
+        
+        Diferente de redact_pdf que aplica tarjas pretas, este método
+        substitui CPF por CPF fake, nome por nome fake, etc.
+        
+        Args:
+            input_path: Caminho do PDF original
+            output_path: Caminho para salvar PDF pseudonimizado
+            areas: Lista de áreas a pseudonimizar
+            job_id: ID do job para garantir consistência
+            
+        Returns:
+            Dicionário com estatísticas e mapeamentos
+        """
+        from app.core.pseudonymizer import Pseudonymizer
+        
+        doc = fitz.open(str(input_path))
+        pseudonymizer = Pseudonymizer(seed=job_id or "default")
+        
+        stats = {
+            'total_pseudonimizacoes': 0,
+            'por_tipo': {},
+            'por_pagina': {},
+            'mapeamentos': []  # Para auditoria
+        }
+        
+        # Agrupar áreas por página
+        areas_por_pagina = {}
+        for area in areas:
+            if area.pagina not in areas_por_pagina:
+                areas_por_pagina[area.pagina] = []
+            areas_por_pagina[area.pagina].append(area)
+        
+        for page_num, page_areas in areas_por_pagina.items():
+            if page_num < 1 or page_num > len(doc):
+                continue
+            
+            page = doc[page_num - 1]
+            
+            for area in page_areas:
+                rect = fitz.Rect(area.x0, area.y0, area.x1, area.y1)
+                
+                # Gerar pseudônimo
+                pseudonimo = pseudonymizer.pseudonymize(
+                    area.tipo, 
+                    area.valor_original
+                )
+                
+                # 1. Adicionar redação para remover texto original
+                page.add_redact_annot(rect, text=" ", fill=(1, 1, 1))  # Fundo branco
+                
+                # Atualizar estatísticas
+                stats['total_pseudonimizacoes'] += 1
+                
+                if area.tipo not in stats['por_tipo']:
+                    stats['por_tipo'][area.tipo] = 0
+                stats['por_tipo'][area.tipo] += 1
+                
+                if page_num not in stats['por_pagina']:
+                    stats['por_pagina'][page_num] = 0
+                stats['por_pagina'][page_num] += 1
+            
+            # Aplicar redações (remove texto original)
+            page.apply_redactions(images=0, graphics=0)
+            
+            # 2. Inserir pseudônimos no lugar
+            for area in page_areas:
+                rect = fitz.Rect(area.x0, area.y0, area.x1, area.y1)
+                pseudonimo = pseudonymizer.pseudonymize(
+                    area.tipo, 
+                    area.valor_original
+                )
+                
+                # Calcular tamanho da fonte baseado na altura do rect
+                font_size = min(12, max(8, (rect.height - 2) * 0.8))
+                
+                # Inserir texto pseudonimizado
+                page.insert_text(
+                    (rect.x0 + 1, rect.y1 - 2),  # Posição ajustada
+                    pseudonimo,
+                    fontsize=font_size,
+                    color=(0, 0, 0)  # Preto
+                )
+                
+                stats['mapeamentos'].append({
+                    'tipo': area.tipo,
+                    'pseudonimo': pseudonimo,
+                    'pagina': page_num
+                })
         
         # Limpar metadados
-        doc.set_metadata({
-            'author': '',
-            'creator': 'TJMG Anonymizer',
-            'producer': 'TJMG Anonymizer Pipeline',
-            'title': '',
-            'subject': '',
-            'keywords': ''
-        })
+        doc.set_metadata({})
         
-        # Salvar documento
+        # Salvar
         doc.save(
             str(output_path),
             garbage=4,
@@ -117,6 +227,46 @@ class Redactor:
             clean=True,
         )
         doc.close()
+        
+        return stats
+
+    def redact_via_rasterization(
+        self,
+        input_path: Path,
+        output_path: Path
+    ) -> None:
+        """
+        Estratégia "Nuclear": Rasteriza o PDF inteiro (transforma em imagens).
+        Garante que NENHUM texto ou metadado oculto sobreviva.
+        
+        Args:
+            input_path: Caminho do PDF a ser rasterizado
+            output_path: Caminho de saída
+        """
+        doc = fitz.open(str(input_path))
+        # Zoom de 2.0 = 200% de resolução (mantém legibilidade)
+        mat = fitz.Matrix(2.0, 2.0)
+        
+        pdf_novo = fitz.open()
+
+        for page in doc:
+            # 1. Renderiza a página como imagem (Pixmap)
+            pix = page.get_pixmap(matrix=mat)
+            
+            # 2. Cria nova página no PDF de destino
+            nova_pagina = pdf_novo.new_page(
+                width=page.rect.width, 
+                height=page.rect.height
+            )
+            
+            # 3. Insere a imagem "achatada" (flat)
+            img_bytes = pix.tobytes("png")
+            nova_pagina.insert_image(nova_pagina.rect, stream=img_bytes)
+
+        # Salvar o novo PDF (puramente imagem)
+        pdf_novo.save(str(output_path))
+        doc.close()
+        pdf_novo.close()
         
         return stats
     

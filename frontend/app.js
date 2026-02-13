@@ -71,7 +71,7 @@ elements.uploadArea.addEventListener('dragleave', () => {
 elements.uploadArea.addEventListener('drop', (e) => {
     e.preventDefault();
     elements.uploadArea.classList.remove('dragover');
-    
+
     if (e.dataTransfer.files.length > 0) {
         handleFileSelect(e.dataTransfer.files[0]);
     }
@@ -108,18 +108,18 @@ function handleFileSelect(file) {
         alert('Por favor, selecione um arquivo PDF ou DOCX.');
         return;
     }
-    
+
     selectedFile = file;
-    
+
     // Update UI
     elements.fileName.textContent = file.name;
     elements.fileSize.textContent = formatFileSize(file.size);
-    
+
     elements.uploadArea.classList.add('hidden');
     elements.fileInfo.classList.remove('hidden');
     elements.metadataForm.classList.remove('hidden');
     elements.actionButtons.classList.remove('hidden');
-    
+
     // Hide previous results
     elements.resultsSection.classList.add('hidden');
 }
@@ -128,7 +128,7 @@ function resetUpload() {
     selectedFile = null;
     currentJobId = null;
     anonymizedBlob = null;
-    
+
     elements.fileInput.value = '';
     elements.uploadArea.classList.remove('hidden');
     elements.fileInfo.classList.add('hidden');
@@ -146,31 +146,31 @@ function formatFileSize(bytes) {
 
 async function analyzeDocument() {
     if (!selectedFile) return;
-    
+
     showProgress('Analisando documento...', 'Extraindo texto e identificando dados sensíveis');
-    
+
     try {
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('classe_processual', elements.classeProcessual.value);
         formData.append('vara', elements.vara.value);
         formData.append('comarca', elements.comarca.value);
-        
+
         // Simulate progress
         simulateProgress();
-        
+
         const response = await fetch(`${API_BASE}/analyze`, {
             method: 'POST',
             body: formData,
         });
-        
+
         if (!response.ok) {
             throw new Error('Erro ao analisar documento');
         }
-        
+
         const data = await response.json();
         showAnalysisResults(data);
-        
+
     } catch (error) {
         console.error('Error:', error);
         alert('Erro ao analisar documento: ' + error.message);
@@ -180,38 +180,38 @@ async function analyzeDocument() {
 
 async function anonymizeDocument() {
     if (!selectedFile) return;
-    
+
     showProgress('Anonimizando documento...', 'Aplicando tarjas sobre dados sensíveis');
-    
+
     try {
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('classe_processual', elements.classeProcessual.value);
         formData.append('vara', elements.vara.value);
         formData.append('comarca', elements.comarca.value);
-        
+
         // Simulate progress
         simulateProgress();
-        
+
         const response = await fetch(`${API_BASE}/anonymize`, {
             method: 'POST',
             body: formData,
         });
-        
+
         if (!response.ok) {
             throw new Error('Erro ao anonimizar documento');
         }
-        
+
         // Get metadata from headers
         currentJobId = response.headers.get('X-Job-ID');
         const totalRedactions = response.headers.get('X-Total-Redactions');
         const hashOriginal = response.headers.get('X-Original-Hash');
         const hashAnonymized = response.headers.get('X-Anonymized-Hash');
         const processingTime = response.headers.get('X-Processing-Time-Ms');
-        
+
         // Save blob for download
         anonymizedBlob = await response.blob();
-        
+
         // Show results
         showAnonymizationResults({
             job_id: currentJobId,
@@ -220,7 +220,7 @@ async function anonymizeDocument() {
             hash_anonimizado: hashAnonymized,
             tempo_processamento_ms: parseInt(processingTime) || 0,
         });
-        
+
     } catch (error) {
         console.error('Error:', error);
         alert('Erro ao anonimizar documento: ' + error.message);
@@ -241,16 +241,88 @@ function hideProgress() {
     elements.actionButtons.classList.remove('hidden');
 }
 
+function startProgressStream(jobId) {
+    // Tentar usar SSE para progresso em tempo real
+    try {
+        const evtSource = new EventSource(`${API_BASE}/progress/${jobId}`);
+
+        evtSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.done) {
+                evtSource.close();
+                return;
+            }
+
+            // Atualizar barra de progresso
+            elements.progressFill.style.width = data.porcentagem + '%';
+
+            // Atualizar status com informações detalhadas
+            let statusMsg = data.mensagem;
+            if (data.total_paginas > 0) {
+                statusMsg += ` (Página ${data.pagina_atual}/${data.total_paginas})`;
+            }
+            if (data.dados_encontrados > 0) {
+                statusMsg += ` • ${data.dados_encontrados} dados encontrados`;
+            }
+            elements.progressStatus.textContent = statusMsg;
+        };
+
+        evtSource.onerror = () => {
+            evtSource.close();
+            // Fallback para polling se SSE falhar
+            startProgressPolling(jobId);
+        };
+
+        return evtSource;
+    } catch (e) {
+        // Fallback para polling
+        return startProgressPolling(jobId);
+    }
+}
+
+function startProgressPolling(jobId) {
+    const pollInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`${API_BASE}/progress/${jobId}/status`);
+            const data = await response.json();
+
+            if (data.status === 'not_found') {
+                clearInterval(pollInterval);
+                return;
+            }
+
+            elements.progressFill.style.width = data.porcentagem + '%';
+
+            let statusMsg = data.mensagem;
+            if (data.total_paginas > 0) {
+                statusMsg += ` (Página ${data.pagina_atual}/${data.total_paginas})`;
+            }
+            elements.progressStatus.textContent = statusMsg;
+
+            if (data.porcentagem >= 100) {
+                clearInterval(pollInterval);
+            }
+        } catch (e) {
+            // Ignorar erros de polling
+        }
+    }, 500);
+
+    return { close: () => clearInterval(pollInterval) };
+}
+
+// Mantém simulação como fallback quando SSE não está disponível
 function simulateProgress() {
     let progress = 0;
     const stages = [
-        { progress: 20, status: 'Extraindo texto do documento' },
-        { progress: 40, status: 'Identificando padrões com Regex' },
-        { progress: 60, status: 'Analisando entidades com NLP' },
-        { progress: 80, status: 'Verificando lista branca' },
+        { progress: 10, status: 'Iniciando processamento...' },
+        { progress: 25, status: 'Extraindo texto do documento' },
+        { progress: 45, status: 'Identificando padrões com Regex' },
+        { progress: 65, status: 'Analisando entidades com NLP' },
+        { progress: 80, status: 'Aplicando anonimização' },
         { progress: 95, status: 'Finalizando processamento' },
     ];
-    
+
     let stageIndex = 0;
     const interval = setInterval(() => {
         if (stageIndex < stages.length) {
@@ -261,21 +333,23 @@ function simulateProgress() {
         } else {
             clearInterval(interval);
         }
-    }, 500);
+    }, 800);
+
+    return { close: () => clearInterval(interval) };
 }
 
 function showAnalysisResults(data) {
     hideProgress();
-    
+
     elements.jobId.textContent = `Job: ${data.job_id}`;
     elements.statPages.textContent = data.total_paginas;
     elements.statIdentified.textContent = data.total_identificados;
     elements.statRedacted.textContent = '-';
     elements.statTime.textContent = data.tempo_processamento_ms + 'ms';
-    
+
     // Populate table
     elements.dataTableBody.innerHTML = '';
-    
+
     if (data.dados_sensiveis.length === 0) {
         elements.dataTableBody.innerHTML = `
             <tr>
@@ -301,30 +375,30 @@ function showAnalysisResults(data) {
             elements.dataTableBody.appendChild(row);
         });
     }
-    
+
     // Hide download section for analysis only
     elements.downloadSection.classList.add('hidden');
-    
+
     elements.resultsSection.classList.remove('hidden');
     elements.actionButtons.classList.remove('hidden');
 }
 
 function showAnonymizationResults(data) {
     hideProgress();
-    
+
     elements.jobId.textContent = `Job: ${data.job_id}`;
     elements.statRedacted.textContent = data.total_redacoes;
     elements.statTime.textContent = data.tempo_processamento_ms + 'ms';
-    
+
     // Show hashes
     elements.hashOriginal.textContent = truncateHash(data.hash_original);
     elements.hashOriginal.title = data.hash_original;
     elements.hashAnonymized.textContent = truncateHash(data.hash_anonimizado);
     elements.hashAnonymized.title = data.hash_anonimizado;
-    
+
     // Show download section
     elements.downloadSection.classList.remove('hidden');
-    
+
     elements.resultsSection.classList.remove('hidden');
     elements.actionButtons.classList.remove('hidden');
 }
@@ -345,7 +419,7 @@ function downloadAnonymized() {
         alert('Nenhum arquivo disponível para download');
         return;
     }
-    
+
     const url = URL.createObjectURL(anonymizedBlob);
     const a = document.createElement('a');
     a.href = url;
