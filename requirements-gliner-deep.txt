@@ -1,0 +1,6 @@
+# GLiNER Deep Mode - Additional dependencies
+# Install with: pip install -r requirements-gliner-deep.txt
+# Required for 'deep' NER mode (Ai4Privacy OpenPII)
+
+gliner>=0.2.0
+torch>=2.1.0

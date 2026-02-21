@@ -35,6 +35,7 @@ const elements = {
     classeProcessual: document.getElementById('classeProcessual'),
     vara: document.getElementById('vara'),
     comarca: document.getElementById('comarca'),
+    nerMode: document.getElementById('nerMode'),
 };
 
 // State
@@ -155,6 +156,7 @@ async function analyzeDocument() {
         formData.append('classe_processual', elements.classeProcessual.value);
         formData.append('vara', elements.vara.value);
         formData.append('comarca', elements.comarca.value);
+        formData.append('ner_mode', elements.nerMode.value);
 
         // Simulate progress
         simulateProgress();
@@ -189,6 +191,7 @@ async function anonymizeDocument() {
         formData.append('classe_processual', elements.classeProcessual.value);
         formData.append('vara', elements.vara.value);
         formData.append('comarca', elements.comarca.value);
+        formData.append('ner_mode', elements.nerMode.value);
 
         // Simulate progress
         simulateProgress();

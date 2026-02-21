@@ -58,6 +58,7 @@ async def analyze_document(
     classe_processual: Optional[str] = Form(None),
     vara: Optional[str] = Form(None),
     comarca: Optional[str] = Form(None),
+    ner_mode: Optional[str] = Form(None),  # 'standard' | 'deep' | 'legacy'
 ):
     """
     Analisa um documento e identifica dados sensíveis.
@@ -79,7 +80,7 @@ async def analyze_document(
         from app.core.pdf_handler import pdf_handler
         pdf_info = pdf_handler.get_info(temp_path)
         
-        dados = pipeline.analyze_only(temp_path)
+        dados = pipeline.analyze_only(temp_path, ner_mode=ner_mode)
         
         tempo_ms = int((time.time() - start_time) * 1000)
         
@@ -117,6 +118,7 @@ async def anonymize_document(
     vara: Optional[str] = Form(None),
     comarca: Optional[str] = Form(None),
     mode: Optional[str] = Form(None),  # 'redact' | 'pseudonymize'
+    ner_mode: Optional[str] = Form(None),  # 'standard' | 'deep' | 'legacy'
 ):
     """
     Anonimiza um documento e retorna o PDF processado.
@@ -143,7 +145,8 @@ async def anonymize_document(
             output_dir=output_dir,
             usuario=None,
             ip_origem=request.client.host if request.client else None,
-            mode=mode
+            mode=mode,
+            ner_mode=ner_mode
         )
         
         # Retornar arquivo anonimizado

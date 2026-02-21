@@ -24,8 +24,18 @@ class SensitiveDataType(str, Enum):
     CEP = "CEP"
     RG = "RG"
     PESSOA = "PESSOA"  # Nome de pessoa (NER)
-    ENDERECO = "ENDERECO"  # Endereço (NER)
+    ENDERECO = "ENDERECO"  # Endereço (NER/Regex)
+    ORGANIZACAO = "ORGANIZACAO"  # Organização (NER)
     DATA_NASCIMENTO = "DATA_NASCIMENTO"
+    CTPS = "CTPS"
+    PIS_PASEP = "PIS_PASEP"
+    TITULO_ELEITOR = "TITULO_ELEITOR"
+    CNH = "CNH"
+    CONTA_BANCARIA = "CONTA_BANCARIA"
+    AGENCIA = "AGENCIA"
+    ROSTO = "ROSTO"  # Rosto detectado em scan (dado biométrico)
+    ASSINATURA = "ASSINATURA"  # Assinatura manuscrita em scan
+    OUTRO = "OUTRO"
 
 
 class DocumentMetadata(BaseModel):

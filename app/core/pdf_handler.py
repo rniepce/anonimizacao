@@ -5,7 +5,6 @@ Detecta tipo de PDF, extrai texto e converte formatos
 import fitz  # PyMuPDF
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass

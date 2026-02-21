@@ -104,7 +104,12 @@ class ProgressManager:
             }
             
             peso_etapa = etapa_pesos.get(etapa, 0)
-            peso_anterior = sum(etapa_pesos[e] for e in list(etapa_pesos.keys())[:list(etapa_pesos.keys()).index(etapa)])
+            etapas_keys = list(etapa_pesos.keys())
+            try:
+                idx = etapas_keys.index(etapa)
+            except ValueError:
+                idx = 0
+            peso_anterior = sum(etapa_pesos[e] for e in etapas_keys[:idx])
             
             if total_paginas > 0 and pagina > 0:
                 progresso_na_etapa = (pagina / total_paginas) * peso_etapa

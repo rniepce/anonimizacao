@@ -267,8 +267,6 @@ class Redactor:
         pdf_novo.save(str(output_path))
         doc.close()
         pdf_novo.close()
-        
-        return stats
     
     def redact_text_blocks(
         self,

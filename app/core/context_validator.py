@@ -10,7 +10,6 @@ from typing import Optional
 from dataclasses import dataclass
 
 from app.core.allowlist import allowlist_manager
-from app.core.pdf_handler import TextBlock
 
 @dataclass
 class ContextDecision:

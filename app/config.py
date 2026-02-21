@@ -23,8 +23,16 @@ class Settings(BaseSettings):
     
     # NLP / NER
     SPACY_MODEL: str = "pt_core_news_lg"
-    NER_ENGINE: str = "spacy"  # 'spacy' | 'transformer'
+    NER_ENGINE: str = "gliner"  # 'gliner' | 'gliner_deep' | 'spacy' | 'transformer'
     NER_TRANSFORMER_MODEL: str = "pierreguillou/bert-base-cased-pt-lenerbr"
+    GLINER_MODEL: str = "urchade/gliner_multi_pii-v1"
+    GLINER_DEEP_MODEL: str = "Ai4Privacy/star-pii-gliner-multi-v1"
+    GLINER_CONFIDENCE: float = 0.5
+    
+    # Detecção visual (documentos escaneados)
+    DETECT_FACES: bool = True
+    DETECT_SIGNATURES: bool = True
+    FACE_CONFIDENCE: float = 0.5
     
     # Anonimização
     REDACTION_COLOR: tuple = (0, 0, 0)  # Preto

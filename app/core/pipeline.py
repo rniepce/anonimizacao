@@ -7,7 +7,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional
 
 from app.config import settings
 from app.core.pdf_handler import pdf_handler, TextBlock
@@ -32,7 +32,7 @@ class SensitiveDataItem:
     x1: float
     y1: float
     confianca: float
-    fonte: str  # 'regex' ou 'ner'
+    fonte: str  # 'regex', 'ner', 'gliner', 'face', 'signature'
 
 
 @dataclass
@@ -71,10 +71,36 @@ class AnonymizationPipeline:
         self._ocr_engine = None
         self._init_engines()
     
-    def _init_engines(self):
+    def _init_engines(self, ner_mode: Optional[str] = None):
         """Inicializa os engines de NER e OCR baseado nas configurações."""
-        # NER Engine
-        if settings.NER_ENGINE == "transformer":
+        # NER Engine — resolver modo
+        effective_ner = ner_mode or settings.NER_ENGINE
+        self._ner_engine = None
+        
+        # Tentar GLiNER (standard ou deep)
+        if effective_ner in ('gliner', 'gliner_deep'):
+            try:
+                from app.core.ner_gliner import GLiNEREngine
+                mode = 'deep' if effective_ner == 'gliner_deep' else 'standard'
+                model = (
+                    settings.GLINER_DEEP_MODEL if mode == 'deep'
+                    else settings.GLINER_MODEL
+                )
+                self._ner_engine = GLiNEREngine(
+                    mode=mode,
+                    model_name=model,
+                    confidence_threshold=settings.GLINER_CONFIDENCE,
+                )
+                if self._ner_engine.is_available:
+                    logger.info(f"Usando NER com GLiNER ({mode})")
+                else:
+                    logger.warning("GLiNER não disponível, tentando fallback")
+                    self._ner_engine = None
+            except ImportError:
+                logger.warning("GLiNER não instalado, tentando fallback")
+        
+        # Fallback para Transformer
+        if self._ner_engine is None and effective_ner in ('transformer', 'gliner', 'gliner_deep'):
             try:
                 from app.core.ner_transformer import NERTransformerEngine
                 self._ner_engine = NERTransformerEngine(
@@ -85,8 +111,9 @@ class AnonymizationPipeline:
                 else:
                     self._ner_engine = None
             except ImportError:
-                logger.warning("Transformers não disponível, usando SpaCy")
+                logger.warning("Transformers não disponível")
         
+        # Fallback final para SpaCy
         if self._ner_engine is None:
             self._ner_engine = ner_engine
             logger.info("Usando NER com SpaCy")
@@ -113,7 +140,8 @@ class AnonymizationPipeline:
         output_dir: Optional[Path] = None,
         usuario: Optional[str] = None,
         ip_origem: Optional[str] = None,
-        mode: Optional[str] = None  # 'redact' | 'pseudonymize'
+        mode: Optional[str] = None,  # 'redact' | 'pseudonymize'
+        ner_mode: Optional[str] = None,  # 'standard' | 'deep' | 'legacy'
     ) -> AnonymizationResult:
         """
         Processa um documento completo.
@@ -130,6 +158,12 @@ class AnonymizationPipeline:
         """
         start_time = time.time()
         job_id = str(uuid.uuid4())
+        
+        # Reinicializar NER se modo diferente do padrão
+        if ner_mode:
+            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy'}
+            effective_ner = ner_mode_map.get(ner_mode, ner_mode)
+            self._init_engines(ner_mode=effective_ner)
         
         # Definir modo de anonimização
         anonymization_mode = mode or settings.ANONYMIZATION_MODE
@@ -150,7 +184,7 @@ class AnonymizationPipeline:
             texto_completo = '\n'.join(item.texto for item in text_items)
         else:
             text_items = self._extract_ocr(input_path)
-            texto_completo = ocr_engine.get_full_text(
+            texto_completo = self._ocr_engine.get_full_text(
                 [OCRBox(
                     texto=item.texto,
                     pagina=item.pagina,
@@ -162,10 +196,15 @@ class AnonymizationPipeline:
                 ) for item in text_items]
             )
         
-        # 3. Identificar dados sensíveis
+        # 3. Identificar dados sensíveis (texto)
         dados_identificados = self._identify_sensitive_data(
             texto_completo, text_items
         )
+        
+        # 3b. Detecção visual (rostos e assinaturas em scans)
+        if pdf_info.tipo == 'imagem':
+            visual_areas = self._detect_visual_pii(input_path)
+            dados_identificados.extend(visual_areas)
         
         # 4. Filtrar allowlist
         dados_anonimizar = []
@@ -238,17 +277,27 @@ class AnonymizationPipeline:
             hash_anonimizado=hash_anonimizado
         )
     
-    def analyze_only(self, input_path: Path) -> list[SensitiveDataItem]:
+    def analyze_only(
+        self,
+        input_path: Path,
+        ner_mode: Optional[str] = None,
+    ) -> list[SensitiveDataItem]:
         """
         Apenas identifica dados sensíveis sem anonimizar.
         Útil para preview.
         
         Args:
             input_path: Caminho do arquivo
+            ner_mode: Override do modo NER ('standard', 'deep', 'legacy')
             
         Returns:
             Lista de dados sensíveis identificados
         """
+        # Reinicializar NER se modo diferente
+        if ner_mode:
+            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy'}
+            effective_ner = ner_mode_map.get(ner_mode, ner_mode)
+            self._init_engines(ner_mode=effective_ner)
         pdf_info = pdf_handler.get_info(input_path)
         
         if pdf_info.tipo == 'nativo':
@@ -256,7 +305,7 @@ class AnonymizationPipeline:
             texto_completo = '\n'.join(item.texto for item in text_items)
         else:
             text_items = self._extract_ocr(input_path)
-            texto_completo = ocr_engine.get_full_text(
+            texto_completo = self._ocr_engine.get_full_text(
                 [OCRBox(
                     texto=item.texto,
                     pagina=item.pagina,
@@ -268,7 +317,14 @@ class AnonymizationPipeline:
                 ) for item in text_items]
             )
         
-        return self._identify_sensitive_data(texto_completo, text_items)
+        dados = self._identify_sensitive_data(texto_completo, text_items)
+        
+        # Detecção visual em scans
+        if pdf_info.tipo == 'imagem':
+            visual_areas = self._detect_visual_pii(input_path)
+            dados.extend(visual_areas)
+        
+        return dados
     
     def _extract_native(self, pdf_path: Path) -> list[TextBlock]:
         """Extrai texto de PDF nativo com posições"""
@@ -276,7 +332,7 @@ class AnonymizationPipeline:
     
     def _extract_ocr(self, pdf_path: Path) -> list[TextBlock]:
         """Extrai texto via OCR com posições"""
-        ocr_results = ocr_engine.process_pdf(pdf_path)
+        ocr_results = self._ocr_engine.process_pdf(pdf_path)
         
         # Converter OCRBox para TextBlock
         # Precisamos das dimensões da página para conversão de coordenadas
@@ -305,6 +361,97 @@ class AnonymizationPipeline:
                 ))
         
         return text_blocks
+    
+    def _detect_visual_pii(self, pdf_path: Path) -> list[SensitiveDataItem]:
+        """
+        Detecta PII visual em documentos escaneados (rostos e assinaturas).
+        
+        Args:
+            pdf_path: Caminho do PDF escaneado
+            
+        Returns:
+            Lista de SensitiveDataItem para áreas visuais detectadas
+        """
+        visual_items = []
+        
+        try:
+            from pdf2image import convert_from_path
+            
+            images = convert_from_path(pdf_path, dpi=settings.OCR_DPI)
+            dimensions = pdf_handler.get_page_dimensions(pdf_path)
+            
+            # Detecção de rostos
+            if settings.DETECT_FACES:
+                try:
+                    from app.core.face_detector import face_detector
+                    
+                    face_detector.confidence_threshold = settings.FACE_CONFIDENCE
+                    faces = face_detector.detect_in_pdf_images(images)
+                    
+                    for face in faces:
+                        page_idx = face.pagina - 1
+                        if page_idx < len(dimensions) and page_idx < len(images):
+                            img_w, img_h = images[page_idx].size
+                            pdf_w, pdf_h = dimensions[page_idx]
+                            
+                            # Converter pixels → PDF points
+                            scale_x = pdf_w / img_w
+                            scale_y = pdf_h / img_h
+                            
+                            x0 = face.x * scale_x
+                            y0 = face.y * scale_y
+                            x1 = (face.x + face.largura) * scale_x
+                            y1 = (face.y + face.altura) * scale_y
+                            
+                            visual_items.append(SensitiveDataItem(
+                                tipo='ROSTO',
+                                valor='[ROSTO DETECTADO]',
+                                pagina=face.pagina,
+                                x0=x0, y0=y0, x1=x1, y1=y1,
+                                confianca=face.confianca,
+                                fonte='face',
+                            ))
+                except Exception as e:
+                    logger.warning(f"Erro na detecção de rostos: {e}")
+            
+            # Detecção de assinaturas
+            if settings.DETECT_SIGNATURES:
+                try:
+                    from app.core.signature_detector import signature_detector
+                    
+                    signatures = signature_detector.detect_in_pdf_images(images)
+                    
+                    for sig in signatures:
+                        page_idx = sig.pagina - 1
+                        if page_idx < len(dimensions) and page_idx < len(images):
+                            img_w, img_h = images[page_idx].size
+                            pdf_w, pdf_h = dimensions[page_idx]
+                            
+                            scale_x = pdf_w / img_w
+                            scale_y = pdf_h / img_h
+                            
+                            x0 = sig.x * scale_x
+                            y0 = sig.y * scale_y
+                            x1 = (sig.x + sig.largura) * scale_x
+                            y1 = (sig.y + sig.altura) * scale_y
+                            
+                            visual_items.append(SensitiveDataItem(
+                                tipo='ASSINATURA',
+                                valor='[ASSINATURA DETECTADA]',
+                                pagina=sig.pagina,
+                                x0=x0, y0=y0, x1=x1, y1=y1,
+                                confianca=sig.confianca,
+                                fonte='signature',
+                            ))
+                except Exception as e:
+                    logger.warning(f"Erro na detecção de assinaturas: {e}")
+        
+        except ImportError:
+            logger.warning("pdf2image não disponível para detecção visual")
+        except Exception as e:
+            logger.warning(f"Erro na detecção visual: {e}")
+        
+        return visual_items
     
     def _identify_sensitive_data(
         self,
@@ -365,11 +512,11 @@ class AnonymizationPipeline:
                 ))
         
         # 2. Busca por NER (nomes, endereços)
-        ner_entities = ner_engine.extract_entities(texto)
+        ner_entities = self._ner_engine.extract_entities(texto)
         
         for entity in ner_entities:
             # Validar contexto para Pessoas e Organizações
-            if entity.tipo in ('PESSOA', 'ORGANIZACAO', 'PESSOA', 'ORG', 'PER'):
+            if entity.tipo in ('PESSOA', 'ORGANIZACAO', 'ORG', 'PER'):
                 # Usar o validador de contexto
                 decision = context_validator.validate(
                     text=texto,
@@ -395,7 +542,7 @@ class AnonymizationPipeline:
                         x1=position.x1,
                         y1=position.y1,
                         confianca=0.85,
-                        fonte=f'ner'
+                        fonte='ner'
                     ))
         
         # Remover duplicatas e sobreposições
