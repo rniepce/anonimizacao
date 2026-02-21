@@ -27,8 +27,8 @@ app.add_middleware(
 # Rotas da API
 app.include_router(router, prefix=settings.API_PREFIX)
 
-# Servir frontend estático
-frontend_path = Path(__file__).parent.parent / "frontend"
+# Servir frontend estático (build React/Vite)
+frontend_path = Path(__file__).parent.parent / "frontend" / "dist"
 if frontend_path.exists():
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
 

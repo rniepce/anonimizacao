@@ -1,3 +1,12 @@
+## ---- Stage 1: Build React frontend ----
+FROM node:20-slim AS frontend-build
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+## ---- Stage 2: Python backend ----
 FROM python:3.11-slim
 
 # Evitar que o Python gere arquivos .pyc
@@ -27,6 +36,9 @@ RUN python -m spacy download pt_core_news_lg
 
 # Copiar código da aplicação
 COPY . .
+
+# Copiar build do frontend
+COPY --from=frontend-build /frontend/dist ./frontend/dist
 
 # Criar diretórios necessários
 RUN mkdir -p logs data/uploads data/allowlist

@@ -32,6 +32,10 @@ venv/
 .vscode/
 .idea/
 
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+
 # Project
 data/uploads/*
 !data/uploads/.gitkeep
