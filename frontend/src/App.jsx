@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
 import UploadSection from './components/UploadSection';
 import MetadataForm from './components/MetadataForm';
@@ -98,9 +99,11 @@ function App() {
             setView('results');
         } catch (error) {
             stopSim();
-            console.error('Error:', error);
-            alert('Erro ao analisar documento: ' + error.message);
+            console.error('Analyze error:', error);
             setView('upload');
+            setTimeout(() => {
+                alert('Erro ao analisar documento: ' + (error?.message || 'Erro desconhecido'));
+            }, 100);
         }
     }, [selectedFile, metadata, simulateProgress]);
 
@@ -124,9 +127,11 @@ function App() {
             setView('results');
         } catch (error) {
             stopSim();
-            console.error('Error:', error);
-            alert('Erro ao anonimizar documento: ' + error.message);
+            console.error('Anonymize error:', error);
             setView('upload');
+            setTimeout(() => {
+                alert('Erro ao anonimizar documento: ' + (error?.message || 'Erro desconhecido'));
+            }, 100);
         }
     }, [selectedFile, metadata, simulateProgress]);
 
@@ -208,4 +213,12 @@ function App() {
     );
 }
 
-export default App;
+function AppWrapper() {
+    return (
+        <ErrorBoundary>
+            <App />
+        </ErrorBoundary>
+    );
+}
+
+export default AppWrapper;
