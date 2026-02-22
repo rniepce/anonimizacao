@@ -22,6 +22,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-Job-ID",
+        "X-Total-Redactions",
+        "X-Original-Hash",
+        "X-Anonymized-Hash",
+        "X-Processing-Time-Ms",
+        "X-Anonymization-Mode",
+    ],
 )
 
 # Rotas da API

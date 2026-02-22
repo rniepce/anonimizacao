@@ -47,11 +47,12 @@ function App() {
     const simulateProgress = useCallback(() => {
         const stages = [
             { progress: 10, status: 'Iniciando processamento...' },
-            { progress: 25, status: 'Extraindo texto do documento' },
-            { progress: 45, status: 'Identificando padrões com Regex' },
-            { progress: 65, status: 'Analisando entidades com NLP' },
-            { progress: 80, status: 'Aplicando anonimização' },
-            { progress: 95, status: 'Finalizando processamento' },
+            { progress: 25, status: 'Extraindo texto do documento...' },
+            { progress: 40, status: 'Identificando padrões com Regex...' },
+            { progress: 55, status: 'Analisando entidades com NLP...' },
+            { progress: 70, status: 'Carregando modelos de IA...' },
+            { progress: 80, status: 'Aplicando anonimização...' },
+            { progress: 90, status: 'Finalizando processamento...' },
         ];
 
         let i = 0;
@@ -64,9 +65,14 @@ function App() {
                 }));
                 i++;
             } else {
-                clearInterval(interval);
+                // Manter mostrando atividade — pulsar entre 90-95%
+                setProgressInfo((prev) => ({
+                    ...prev,
+                    progress: prev.progress === 95 ? 90 : 95,
+                    status: 'Aguardando servidor... Processamento em andamento',
+                }));
             }
-        }, 800);
+        }, 1500);
 
         return () => clearInterval(interval);
     }, []);
