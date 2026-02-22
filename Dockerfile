@@ -31,8 +31,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Baixar modelo SpaCy para português
+RUN python -m spacy download pt_core_news_lg
+
 # Copiar código da aplicação
 COPY . .
+
+# Pré-baixar modelo GLiNER durante o build (evita download no 1o request)
+RUN python -c "from gliner import GLiNER; GLiNER.from_pretrained('urchade/gliner_multi_pii-v1')"
 
 # Copiar build do frontend
 COPY --from=frontend-build /frontend/dist ./frontend/dist
