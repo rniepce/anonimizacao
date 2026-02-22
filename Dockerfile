@@ -31,8 +31,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Baixar modelo SpaCy para português
-RUN python -m spacy download pt_core_news_lg
+# Baixar modelo SpaCy para português (pip install é mais confiável no Docker)
+RUN pip install --no-cache-dir https://github.com/explosion/spacy-models/releases/download/pt_core_news_lg-3.7.0/pt_core_news_lg-3.7.0-py3-none-any.whl
 
 # Copiar código da aplicação
 COPY . .
