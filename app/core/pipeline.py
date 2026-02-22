@@ -69,12 +69,14 @@ class AnonymizationPipeline:
         # Inicializar engines baseado nas configurações
         self._ner_engine = None
         self._ocr_engine = None
+        self._current_ner_mode = None
         self._init_engines()
     
     def _init_engines(self, ner_mode: Optional[str] = None):
         """Inicializa os engines de NER e OCR baseado nas configurações."""
         # NER Engine — resolver modo
         effective_ner = ner_mode or settings.NER_ENGINE
+        self._current_ner_mode = effective_ner
         self._ner_engine = None
         
         # Tentar GLiNER (standard ou deep)
@@ -159,11 +161,12 @@ class AnonymizationPipeline:
         start_time = time.time()
         job_id = str(uuid.uuid4())
         
-        # Reinicializar NER se modo diferente do padrão
+        # Reinicializar NER se modo diferente do atual
         if ner_mode:
             ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy'}
             effective_ner = ner_mode_map.get(ner_mode, ner_mode)
-            self._init_engines(ner_mode=effective_ner)
+            if effective_ner != self._current_ner_mode:
+                self._init_engines(ner_mode=effective_ner)
         
         # Definir modo de anonimização
         anonymization_mode = mode or settings.ANONYMIZATION_MODE
@@ -507,7 +510,6 @@ class AnonymizationPipeline:
         # Normalizar tipos de regex para tipos do sistema
         TIPO_MAP = {
             'PESSOA_CONTEXTO': 'PESSOA',
-            'NOME_PROPRIO': 'PESSOA',
         }
         
         for match in regex_matches:
@@ -530,7 +532,7 @@ class AnonymizationPipeline:
                     y0=position.y0,
                     x1=position.x1,
                     y1=position.y1,
-                    confianca=1.0 if match.tipo != 'NOME_PROPRIO' else 0.75,
+                    confianca=1.0,
                     fonte='regex'
                 ))
         

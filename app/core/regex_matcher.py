@@ -136,15 +136,6 @@ class RegexMatcher:
                 r"([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:d[aoe]s?|e|D[aoe]s?)\s+)?(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,6})",
                 re.UNICODE
             ),
-            
-            # Nomes próprios completos (2+ palavras começando com maiúscula)
-            # Usado como fallback — captura "João da Silva" ou "Maria de Oliveira Santos"
-            "NOME_PROPRIO": re.compile(
-                r"(?<![:\w])\b([A-ZÀ-Ú][a-zà-ú]{2,}"
-                r"(?:\s+(?:d[aoe]s?|e|D[aoe]s?))?"
-                r"(?:\s+[A-ZÀ-Ú][a-zà-ú]{2,}){1,5})\b",
-                re.UNICODE
-            ),
         }
     
     def find_all(self, texto: str) -> list[RegexMatch]:
