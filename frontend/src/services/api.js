@@ -9,7 +9,7 @@ export async function analyzeDocument(file, metadata) {
     formData.append('classe_processual', metadata.classeProcessual || '');
     formData.append('vara', metadata.vara || '');
     formData.append('comarca', metadata.comarca || '');
-    formData.append('ner_mode', metadata.nerMode || 'standard');
+    formData.append('ner_mode', metadata.nerMode || 'legacy');
 
     const response = await fetch(`${API_BASE}/analyze`, {
         method: 'POST',
@@ -40,7 +40,7 @@ export async function anonymizeDocument(file, metadata) {
     formData.append('classe_processual', metadata.classeProcessual || '');
     formData.append('vara', metadata.vara || '');
     formData.append('comarca', metadata.comarca || '');
-    formData.append('ner_mode', metadata.nerMode || 'standard');
+    formData.append('ner_mode', metadata.nerMode || 'legacy');
 
     const response = await fetch(`${API_BASE}/anonymize`, {
         method: 'POST',

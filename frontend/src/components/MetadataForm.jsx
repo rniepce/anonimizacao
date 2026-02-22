@@ -49,9 +49,9 @@ function MetadataForm({ metadata, onChange }) {
                         value={metadata.nerMode}
                         onChange={handleChange('nerMode')}
                     >
-                        <option value="standard">Padrão (GLiNER-PII)</option>
-                        <option value="deep">Profundo (OpenPII)</option>
-                        <option value="legacy">Legado (SpaCy)</option>
+                        <option value="legacy">Padrão (SpaCy - Rápido)</option>
+                        <option value="standard">Avançado (Transformer - Lento)</option>
+                        <option value="deep">Profundo (GLiNER-PII)</option>
                     </select>
                 </div>
             </div>
