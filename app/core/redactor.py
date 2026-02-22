@@ -102,7 +102,11 @@ class Redactor:
             # Aplicar as redações (remove o texto e desenha retângulo)
             # images=2 remove partes de imagens sob a tarja (crucial para assinaturas)
             # graphics=2 remove vetores/linhas sob a tarja
-            page.apply_redactions(images=2, graphics=2)
+            try:
+                page.apply_redactions(images=2, graphics=2)
+            except TypeError:
+                # Versões mais antigas do PyMuPDF não suportam 'graphics'
+                page.apply_redactions(images=2)
         
         # Limpar metadados totalmente (Metadata Scrubbing)
         doc.set_metadata({})
@@ -189,7 +193,10 @@ class Redactor:
                 stats['por_pagina'][page_num] += 1
             
             # Aplicar redações (remove texto original)
-            page.apply_redactions(images=0, graphics=0)
+            try:
+                page.apply_redactions(images=0, graphics=0)
+            except TypeError:
+                page.apply_redactions(images=0)
             
             # 2. Inserir pseudônimos no lugar
             for area in page_areas:
