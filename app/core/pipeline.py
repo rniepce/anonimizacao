@@ -183,18 +183,25 @@ class AnonymizationPipeline:
             text_items = self._extract_native(input_path)
             texto_completo = '\n'.join(item.texto for item in text_items)
         else:
-            text_items = self._extract_ocr(input_path)
-            texto_completo = self._ocr_engine.get_full_text(
-                [OCRBox(
-                    texto=item.texto,
-                    pagina=item.pagina,
-                    x=int(item.x0),
-                    y=int(item.y0),
-                    largura=int(item.x1 - item.x0),
-                    altura=int(item.y1 - item.y0),
-                    confianca=0.9
-                ) for item in text_items]
-            )
+            try:
+                text_items = self._extract_ocr(input_path)
+                texto_completo = self._ocr_engine.get_full_text(
+                    [OCRBox(
+                        texto=item.texto,
+                        pagina=item.pagina,
+                        x=int(item.x0),
+                        y=int(item.y0),
+                        largura=int(item.x1 - item.x0),
+                        altura=int(item.y1 - item.y0),
+                        confianca=0.9
+                    ) for item in text_items]
+                )
+            except Exception as ocr_err:
+                logger.warning(
+                    f"OCR falhou ({ocr_err}), usando extração nativa como fallback"
+                )
+                text_items = self._extract_native(input_path)
+                texto_completo = '\n'.join(item.texto for item in text_items)
         
         # 3. Identificar dados sensíveis (texto)
         dados_identificados = self._identify_sensitive_data(
@@ -304,18 +311,25 @@ class AnonymizationPipeline:
             text_items = self._extract_native(input_path)
             texto_completo = '\n'.join(item.texto for item in text_items)
         else:
-            text_items = self._extract_ocr(input_path)
-            texto_completo = self._ocr_engine.get_full_text(
-                [OCRBox(
-                    texto=item.texto,
-                    pagina=item.pagina,
-                    x=int(item.x0),
-                    y=int(item.y0),
-                    largura=int(item.x1 - item.x0),
-                    altura=int(item.y1 - item.y0),
-                    confianca=0.9
-                ) for item in text_items]
-            )
+            try:
+                text_items = self._extract_ocr(input_path)
+                texto_completo = self._ocr_engine.get_full_text(
+                    [OCRBox(
+                        texto=item.texto,
+                        pagina=item.pagina,
+                        x=int(item.x0),
+                        y=int(item.y0),
+                        largura=int(item.x1 - item.x0),
+                        altura=int(item.y1 - item.y0),
+                        confianca=0.9
+                    ) for item in text_items]
+                )
+            except Exception as ocr_err:
+                logger.warning(
+                    f"OCR falhou ({ocr_err}), usando extração nativa como fallback"
+                )
+                text_items = self._extract_native(input_path)
+                texto_completo = '\n'.join(item.texto for item in text_items)
         
         dados = self._identify_sensitive_data(texto_completo, text_items)
         
