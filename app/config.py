@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # NLP / NER
     SPACY_MODEL: str = "pt_core_news_lg"
-    NER_ENGINE: str = "spacy"  # 'spacy' | 'gliner' | 'gliner_deep' | 'transformer'
+    NER_ENGINE: str = "gliner"  # 'gliner' | 'gliner_deep' | 'spacy' | 'transformer'
     NER_TRANSFORMER_MODEL: str = "pierreguillou/bert-base-cased-pt-lenerbr"
     GLINER_MODEL: str = "urchade/gliner_multi_pii-v1"
     GLINER_DEEP_MODEL: str = "Ai4Privacy/star-pii-gliner-multi-v1"
