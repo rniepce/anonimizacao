@@ -18,7 +18,14 @@ export async function analyzeDocument(file, metadata) {
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || 'Erro ao analisar documento');
+        let errorMessage = 'Erro ao analisar documento';
+        try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.detail || errorMessage;
+        } catch {
+            errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
     }
 
     return response.json();
@@ -42,7 +49,14 @@ export async function anonymizeDocument(file, metadata) {
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || 'Erro ao anonimizar documento');
+        let errorMessage = 'Erro ao anonimizar documento';
+        try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.detail || errorMessage;
+        } catch {
+            errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
     }
 
     const blob = await response.blob();

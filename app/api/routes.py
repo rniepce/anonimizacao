@@ -165,7 +165,10 @@ async def anonymize_document(
         )
     
     except Exception as e:
-        raise HTTPException(500, f"Erro ao processar documento: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        detail = str(e) if str(e) else type(e).__name__
+        raise HTTPException(500, f"Erro ao processar documento: {detail}")
     
     finally:
         # Manter arquivos para auditoria (limpar depois via job)
