@@ -119,6 +119,32 @@ class RegexMatcher:
                 r"(?:Agência|Ag\.?)\s*[:.]?\s*(\d{4}[-.]?\d?)",
                 re.IGNORECASE
             ),
+            
+            # Nomes de pessoas em contexto jurídico
+            # Captura nomes completos após palavras-chave comuns
+            "PESSOA_CONTEXTO": re.compile(
+                r"(?:Autor(?:a)?|Réu|Ré|Requerente|Requerido(?:a)?|Indiciado(?:a)?|"
+                r"Vítima|Investigado(?:a)?|Apelante|Apelado(?:a)?|Agravante|"
+                r"Agravado(?:a)?|Impetrante|Impetrado(?:a)?|Reclamante|"
+                r"Reclamado(?:a)?|Exequente|Executado(?:a)?|Paciente|"
+                r"Denunciado(?:a)?|Querelante|Querelado(?:a)?|"
+                r"(?:Menor|Criança|Adolescente)|"
+                r"(?:Sr\.?|Sra\.?|Dr\.?|Dra\.?)|"
+                r"Nome(?:\s+completo)?|"
+                r"Genitor(?:a)?|Pai|Mãe|Filho(?:a)?)"
+                r"\s*[:.]?\s*"
+                r"([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:d[aoe]s?|e|D[aoe]s?)\s+)?(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,6})",
+                re.UNICODE
+            ),
+            
+            # Nomes próprios completos (2+ palavras começando com maiúscula)
+            # Usado como fallback — captura "João da Silva" ou "Maria de Oliveira Santos"
+            "NOME_PROPRIO": re.compile(
+                r"(?<![:\w])\b([A-ZÀ-Ú][a-zà-ú]{2,}"
+                r"(?:\s+(?:d[aoe]s?|e|D[aoe]s?))?"
+                r"(?:\s+[A-ZÀ-Ú][a-zà-ú]{2,}){1,5})\b",
+                re.UNICODE
+            ),
         }
     
     def find_all(self, texto: str) -> list[RegexMatch]:

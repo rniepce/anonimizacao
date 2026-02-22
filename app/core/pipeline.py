@@ -501,8 +501,14 @@ class AnonymizationPipeline:
                     fonte='header_analysis'
                 ))
 
-        # 1. Busca por Regex (CPF, CNPJ, OAB, etc)
+        # 1. Busca por Regex (CPF, CNPJ, OAB, nomes, etc)
         regex_matches = regex_matcher.find_all(texto)
+        
+        # Normalizar tipos de regex para tipos do sistema
+        TIPO_MAP = {
+            'PESSOA_CONTEXTO': 'PESSOA',
+            'NOME_PROPRIO': 'PESSOA',
+        }
         
         for match in regex_matches:
             # Se for OAB, verificamos contexto (geralmente publico)
@@ -510,18 +516,21 @@ class AnonymizationPipeline:
                 # OAB geralmente não se anonimiza, exceto se solicitado especificamente
                 # Vamos manter como detectado, mas o filtro posterior decide
                 pass 
+            
+            # Normalizar tipo
+            tipo_normalizado = TIPO_MAP.get(match.tipo, match.tipo)
                 
             position = self._find_position_for_text(match.valor, text_items)
             if position:
                 results.append(SensitiveDataItem(
-                    tipo=match.tipo,
+                    tipo=tipo_normalizado,
                     valor=match.valor,
                     pagina=position.pagina,
                     x0=position.x0,
                     y0=position.y0,
                     x1=position.x1,
                     y1=position.y1,
-                    confianca=1.0,
+                    confianca=1.0 if match.tipo != 'NOME_PROPRIO' else 0.75,
                     fonte='regex'
                 ))
         

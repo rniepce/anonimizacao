@@ -14,7 +14,7 @@ function App() {
         classeProcessual: '',
         vara: '',
         comarca: '',
-        nerMode: 'standard',
+        nerMode: 'legacy',
     });
 
     // UI state
