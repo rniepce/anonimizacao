@@ -1,6 +1,9 @@
 """
 TJMG Anonymizer Pipeline - FastAPI Application
 """
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -9,10 +12,29 @@ from pathlib import Path
 from app.api.routes import router
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-load models at startup so first request is fast."""
+    logger.info("🚀 Pré-carregando modelos NER...")
+    try:
+        from app.core.pipeline import pipeline
+        # Force NER engine initialization (triggers model download/load)
+        test_text = "João da Silva, CPF 123.456.789-00"
+        pipeline._ner_engine.extract_entities(test_text)
+        logger.info("✅ Modelos NER carregados com sucesso")
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao pré-carregar modelos: {e}")
+    yield
+
+
 app = FastAPI(
     title="TJMG Anonymizer Pipeline",
     description="Pipeline de anonimização de documentos judiciais",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS
