@@ -59,17 +59,17 @@ function App() {
         let i = 0;
         const interval = setInterval(() => {
             if (i < stages.length) {
-                setProgressInfo((prev) => ({
-                    ...prev,
-                    progress: stages[i].progress,
-                    status: stages[i].status,
-                }));
+                const stage = stages[i];
                 i++;
+                setProgressInfo({
+                    title: 'Processando...',
+                    progress: stage.progress,
+                    status: stage.status,
+                });
             } else {
-                // Manter mostrando atividade — pulsar entre 90-95%
                 setProgressInfo((prev) => ({
-                    ...prev,
-                    progress: prev.progress === 95 ? 90 : 95,
+                    title: prev?.title || 'Processando...',
+                    progress: (prev?.progress || 90) === 95 ? 90 : 95,
                     status: 'Aguardando servidor... Processamento em andamento',
                 }));
             }
