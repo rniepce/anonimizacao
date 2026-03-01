@@ -59,6 +59,8 @@
 html {
   font-size: 16px;
   scroll-behavior: smooth;
+  /* Safari: prevent text size adjust on orientation change */
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -66,13 +68,19 @@ body {
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
   line-height: 1.6;
+  /* Safari: use dvh to avoid address-bar overlap, fallback for older browsers */
   min-height: 100vh;
+  min-height: 100dvh;
 
   /* Animated Gradient Background */
   background:
     radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
     radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
     var(--color-bg-primary);
+
+  /* Safari safe-area insets for notched devices */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* ============================================
@@ -84,6 +92,7 @@ body {
   margin: 0 auto;
   padding: var(--spacing-lg);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -150,6 +159,7 @@ body {
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+  flex-shrink: 0;
 }
 
 .logo-text h1 {
@@ -175,6 +185,7 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 /* ============================================
@@ -203,6 +214,9 @@ body {
   cursor: pointer;
   transition: all var(--transition-normal);
   background: rgba(99, 102, 241, 0.02);
+  /* Safari: faster tap response */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
 }
 
 .upload-area:hover,
@@ -242,6 +256,7 @@ body {
   display: flex;
   justify-content: center;
   gap: var(--spacing-sm);
+  flex-wrap: wrap;
 }
 
 .format-tag {
@@ -265,16 +280,21 @@ body {
 
 .file-icon {
   font-size: 1.5rem;
+  flex-shrink: 0;
 }
 
 .file-details {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .file-name {
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-size {
@@ -291,6 +311,14 @@ body {
   border-radius: var(--radius-sm);
   transition: all var(--transition-fast);
   font-size: 1rem;
+  /* Touch targets: Apple minimum 44px */
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .btn-remove:hover {
@@ -333,8 +361,20 @@ body {
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-family: inherit;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   transition: all var(--transition-fast);
+  /* Safari: consistent input rendering */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+.form-group select {
+  /* Restore select arrow after appearance reset */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8.825L0.375 3.2l0.85-0.85L6 7.125l4.775-4.775 0.85 0.85z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 2.25rem;
 }
 
 .form-group input:focus,
@@ -354,6 +394,7 @@ body {
   gap: var(--spacing-md);
   justify-content: center;
   margin-top: var(--spacing-xl);
+  flex-wrap: wrap;
 }
 
 /* ============================================
@@ -363,6 +404,7 @@ body {
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-md) var(--spacing-xl);
   border: none;
@@ -372,6 +414,12 @@ body {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
+  /* Touch targets: Apple minimum 44px */
+  min-height: 44px;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .btn-icon-text {
@@ -482,12 +530,15 @@ body {
   justify-content: space-between;
   align-items: center;
   text-align: left;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
 }
 
 .job-id {
   font-size: 0.75rem;
   color: var(--color-text-muted);
   font-family: monospace;
+  word-break: break-all;
 }
 
 /* Stats Grid */
@@ -519,6 +570,7 @@ body {
   font-size: 1.75rem;
   font-weight: 700;
   color: var(--color-accent-light);
+  word-break: break-all;
 }
 
 .stat-label {
@@ -535,6 +587,8 @@ body {
   overflow-x: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
+  /* Safari: momentum scrolling */
+  -webkit-overflow-scrolling: touch;
 }
 
 .data-table {
@@ -547,6 +601,7 @@ body {
   padding: var(--spacing-md);
   text-align: left;
   border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
 }
 
 .data-table th {
@@ -646,10 +701,12 @@ body {
   justify-content: center;
   gap: var(--spacing-sm);
   font-size: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .hash-label {
   color: var(--color-text-muted);
+  flex-shrink: 0;
 }
 
 .hash-item code {
@@ -661,6 +718,7 @@ body {
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
+  word-break: break-all;
 }
 
 /* ============================================
@@ -670,12 +728,13 @@ body {
 .footer {
   text-align: center;
   padding: var(--spacing-xl) 0;
+  padding-bottom: calc(var(--spacing-xl) + env(safe-area-inset-bottom));
   color: var(--color-text-muted);
   font-size: 0.875rem;
 }
 
 /* ============================================
-   Responsive
+   Responsive — Tablet (≤ 768px)
    ============================================ */
 
 @media (max-width: 768px) {
@@ -685,8 +744,16 @@ body {
     text-align: center;
   }
 
+  .logo {
+    flex-direction: column;
+  }
+
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 
   .action-buttons {
@@ -697,7 +764,32 @@ body {
     width: 100%;
     justify-content: center;
   }
+
+  .results-section .section-header {
+    flex-direction: column;
+    text-align: center;
+    gap: var(--spacing-sm);
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: var(--spacing-sm);
+    font-size: 0.875rem;
+  }
+
+  .hash-item {
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .hash-item code {
+    max-width: 100%;
+  }
 }
+
+/* ============================================
+   Responsive — Small phone (≤ 480px)
+   ============================================ */
 
 @media (max-width: 480px) {
   .container {
@@ -706,9 +798,118 @@ body {
 
   .glass-card {
     padding: var(--spacing-lg);
+    border-radius: var(--radius-lg);
   }
 
   .upload-area {
     padding: var(--spacing-xl);
+  }
+
+  .upload-icon {
+    font-size: 3rem;
+  }
+
+  .upload-area h3 {
+    font-size: 1.1rem;
+  }
+
+  .section-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .logo-icon {
+    width: 48px;
+    height: 48px;
+    font-size: 2rem;
+  }
+
+  .logo-text h1 {
+    font-size: 1.25rem;
+  }
+
+  .logo-text span {
+    font-size: 0.8rem;
+  }
+
+  .btn-large {
+    padding: var(--spacing-md) var(--spacing-xl);
+    font-size: 1rem;
+  }
+
+  .progress-header h3 {
+    font-size: 1rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.8125rem;
+  }
+
+  .confidence-bar {
+    width: 40px;
+  }
+}
+
+/* ============================================
+   Safari-specific: disable hover effects on touch
+   ============================================ */
+
+@media (hover: none) and (pointer: coarse) {
+  .stat-card:hover {
+    transform: none;
+  }
+
+  .btn-primary:hover,
+  .btn-success:hover {
+    transform: none;
+  }
+
+  .upload-area:hover {
+    transform: none;
+    border-color: var(--color-border);
+    background: rgba(99, 102, 241, 0.02);
+  }
+
+  .data-table tr:hover td {
+    background: transparent;
+  }
+}
+
+/* ============================================
+   Reduced motion preference
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-card {
+    animation: none;
+  }
+
+  .file-info {
+    animation: none;
+  }
+
+  .spinner {
+    animation: none;
+  }
+
+  .progress-fill {
+    transition: none;
+  }
+
+  .confidence-fill {
+    transition: none;
+  }
+
+  .btn {
+    transition: none;
   }
 }
