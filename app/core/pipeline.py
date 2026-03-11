@@ -79,6 +79,24 @@ class AnonymizationPipeline:
         self._current_ner_mode = effective_ner
         self._ner_engine = None
         
+        # Tentar LLM (Ollama)
+        if effective_ner == 'llm':
+            try:
+                from app.core.ner_llm import NERLLMEngine
+                self._ner_engine = NERLLMEngine(
+                    model_name=settings.LLM_MODEL,
+                    ollama_url=settings.LLM_OLLAMA_URL,
+                    timeout=settings.LLM_TIMEOUT,
+                    temperature=settings.LLM_TEMPERATURE,
+                )
+                if self._ner_engine.is_available:
+                    logger.info(f"Usando NER com LLM ({settings.LLM_MODEL} via Ollama)")
+                else:
+                    logger.warning("Ollama não disponível, tentando fallback")
+                    self._ner_engine = None
+            except Exception as e:
+                logger.warning(f"LLM NER não disponível: {e}")
+        
         # Tentar GLiNER (standard ou deep)
         if effective_ner in ('gliner', 'gliner_deep'):
             try:
@@ -163,7 +181,7 @@ class AnonymizationPipeline:
         
         # Reinicializar NER se modo diferente do atual
         if ner_mode:
-            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy'}
+            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
             effective_ner = ner_mode_map.get(ner_mode, ner_mode)
             if effective_ner != self._current_ner_mode:
                 self._init_engines(ner_mode=effective_ner)
@@ -305,7 +323,7 @@ class AnonymizationPipeline:
         """
         # Reinicializar NER se modo diferente
         if ner_mode:
-            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy'}
+            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
             effective_ner = ner_mode_map.get(ner_mode, ner_mode)
             self._init_engines(ner_mode=effective_ner)
         pdf_info = pdf_handler.get_info(input_path)

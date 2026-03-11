@@ -32,6 +32,80 @@ export async function analyzeDocument(file, metadata) {
 }
 
 /**
+ * Analisa documento e gera PDF de preview com destaques visuais.
+ * Retorna JSON com entidades + URL do preview.
+ */
+export async function analyzePreview(file, metadata) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('classe_processual', metadata.classeProcessual || '');
+    formData.append('vara', metadata.vara || '');
+    formData.append('comarca', metadata.comarca || '');
+    formData.append('ner_mode', metadata.nerMode || 'legacy');
+
+    const response = await fetch(`${API_BASE}/analyze-preview`, {
+        method: 'POST',
+        body: formData,
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Erro ao analisar documento';
+        try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.detail || errorMessage;
+        } catch {
+            errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
+    }
+
+    return response.json();
+}
+
+/**
+ * Anonimiza seletivamente com entidades confirmadas + termos customizados.
+ * Retorna blob do PDF anonimizado + metadados.
+ */
+export async function anonymizeSelective(jobId, entities, customTerms, mode) {
+    const body = {
+        job_id: jobId,
+        entities: entities,
+        custom_terms: customTerms || [],
+        mode: mode || null,
+    };
+
+    const response = await fetch(`${API_BASE}/anonymize-selective`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Erro ao anonimizar documento';
+        try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.detail || errorMessage;
+        } catch {
+            errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
+    }
+
+    const blob = await response.blob();
+    const headerMeta = {
+        jobId: response.headers.get('X-Job-ID'),
+        totalRedactions: parseInt(response.headers.get('X-Total-Redactions')) || 0,
+        hashOriginal: response.headers.get('X-Original-Hash'),
+        hashAnonymized: response.headers.get('X-Anonymized-Hash'),
+        mode: response.headers.get('X-Anonymization-Mode'),
+    };
+
+    return { blob, meta: headerMeta };
+}
+
+/**
  * Anonimiza documento e retorna o blob do PDF + metadados dos headers.
  */
 export async function anonymizeDocument(file, metadata) {

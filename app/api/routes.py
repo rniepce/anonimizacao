@@ -15,10 +15,12 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from app.config import settings
 from app.api.schemas import (
     AnalyzeResponse,
+    AnalyzePreviewResponse,
     AnonymizeResponse,
     AuditLog,
     SensitiveData,
     SensitiveDataType,
+    SelectiveAnonymizeRequest,
     AllowlistEntry,
 )
 from app.core.pipeline import pipeline
@@ -108,6 +110,238 @@ async def analyze_document(
         # Limpar arquivo temporário
         if temp_path.exists():
             temp_path.unlink()
+
+
+@router.post("/analyze-preview", response_model=AnalyzePreviewResponse)
+async def analyze_preview(
+    request: Request,
+    file: UploadFile = File(...),
+    classe_processual: Optional[str] = Form(None),
+    vara: Optional[str] = Form(None),
+    comarca: Optional[str] = Form(None),
+    ner_mode: Optional[str] = Form(None),
+):
+    """
+    Analisa documento, gera PDF com destaques visuais e retorna
+    as entidades identificadas para revisão interativa.
+    """
+    validate_file(file)
+    start_time = time.time()
+    job_id = str(uuid.uuid4())
+
+    # Salvar arquivo
+    temp_path = settings.UPLOAD_DIR / f"{job_id}_{file.filename}"
+    # Manter o original para anonimização seletiva posterior
+    original_path = settings.UPLOAD_DIR / f"{job_id}_original_{file.filename}"
+    preview_path = settings.UPLOAD_DIR / f"{job_id}_preview.pdf"
+
+    try:
+        with open(temp_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # Copiar original (será usado pelo anonymize-selective)
+        shutil.copy2(temp_path, original_path)
+
+        # Obter info do PDF
+        from app.core.pdf_handler import pdf_handler
+        pdf_info = pdf_handler.get_info(temp_path)
+
+        # Analisar documento
+        dados = pipeline.analyze_only(temp_path, ner_mode=ner_mode)
+
+        # Gerar PDF de preview com highlights visuais
+        from app.core.redactor import redactor, RedactionArea
+        areas = [
+            RedactionArea(
+                pagina=d.pagina,
+                x0=d.x0,
+                y0=d.y0,
+                x1=d.x1,
+                y1=d.y1,
+                tipo=d.tipo,
+                valor_original=d.valor
+            )
+            for d in dados
+        ]
+
+        if areas:
+            redactor.add_overlay_boxes(temp_path, preview_path, areas)
+        else:
+            shutil.copy2(temp_path, preview_path)
+
+        tempo_ms = int((time.time() - start_time) * 1000)
+
+        return AnalyzePreviewResponse(
+            job_id=job_id,
+            arquivo=file.filename,
+            total_paginas=pdf_info.total_paginas,
+            tipo_pdf=pdf_info.tipo,
+            preview_url=f"/api/preview/{job_id}",
+            dados_sensiveis=[
+                SensitiveData(
+                    tipo=SensitiveDataType(d.tipo) if d.tipo in SensitiveDataType.__members__ else SensitiveDataType.PESSOA,
+                    valor=d.valor,
+                    pagina=d.pagina,
+                    posicao={"x": d.x0, "y": d.y0, "width": d.x1 - d.x0, "height": d.y1 - d.y0},
+                    confianca=d.confianca,
+                    contexto=None
+                )
+                for d in dados
+            ],
+            total_identificados=len(dados),
+            tempo_processamento_ms=tempo_ms
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        # Limpar arquivos em caso de erro
+        for p in [temp_path, original_path, preview_path]:
+            if p.exists():
+                p.unlink()
+        detail = str(e) if str(e) else type(e).__name__
+        raise HTTPException(500, f"Erro ao analisar documento: {detail}")
+
+    finally:
+        # Limpar apenas o temp, manter original e preview
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+@router.get("/preview/{job_id}")
+async def get_preview(job_id: str):
+    """
+    Serve o PDF de preview com destaques visuais.
+    """
+    preview_path = settings.UPLOAD_DIR / f"{job_id}_preview.pdf"
+
+    if not preview_path.exists():
+        raise HTTPException(404, "Preview não encontrado")
+
+    return FileResponse(
+        path=preview_path,
+        filename=f"preview_{job_id}.pdf",
+        media_type="application/pdf"
+    )
+
+
+@router.post("/anonymize-selective")
+async def anonymize_selective(
+    request: Request,
+    body: SelectiveAnonymizeRequest,
+):
+    """
+    Anonimiza seletivamente com base nas entidades confirmadas pelo usuário.
+    Recebe lista de entidades selecionadas + termos customizados.
+    """
+    job_id = body.job_id
+
+    # Encontrar o arquivo original salvo pelo analyze-preview
+    original_files = list(settings.UPLOAD_DIR.glob(f"{job_id}_original_*"))
+    if not original_files:
+        raise HTTPException(404, "Arquivo original não encontrado. Execute /analyze-preview primeiro.")
+
+    input_path = original_files[0]
+    mode = body.mode or settings.ANONYMIZATION_MODE
+    suffix = "_pseudonimizado" if mode == "pseudonymize" else "_anonimizado"
+    output_path = settings.UPLOAD_DIR / f"{job_id}{suffix}.pdf"
+
+    try:
+        from app.core.redactor import redactor, RedactionArea
+
+        # Converter entidades confirmadas em RedactionAreas
+        areas = []
+        for entity in body.entities:
+            pos = entity.posicao
+            areas.append(RedactionArea(
+                pagina=entity.pagina,
+                x0=pos.get("x", 0),
+                y0=pos.get("y", 0),
+                x1=pos.get("x", 0) + pos.get("width", 0),
+                y1=pos.get("y", 0) + pos.get("height", 0),
+                tipo=entity.tipo,
+                valor_original=entity.valor
+            ))
+
+        # Termos customizados: buscar e adicionar posições via PyMuPDF
+        if body.custom_terms:
+            import fitz
+            doc = fitz.open(str(input_path))
+            for page_num, page in enumerate(doc, start=1):
+                for term in body.custom_terms:
+                    term = term.strip()
+                    if not term:
+                        continue
+                    instances = page.search_for(term)
+                    for rect in instances:
+                        areas.append(RedactionArea(
+                            pagina=page_num,
+                            x0=rect.x0,
+                            y0=rect.y0,
+                            x1=rect.x1,
+                            y1=rect.y1,
+                            tipo="OUTRO",
+                            valor_original=term
+                        ))
+            doc.close()
+
+        # Aplicar anonimização
+        if areas:
+            if mode == "pseudonymize":
+                stats = redactor.pseudonymize_pdf(input_path, output_path, areas, job_id)
+            else:
+                stats = redactor.redact_pdf(input_path, output_path, areas)
+        else:
+            from app.core.pdf_handler import pdf_handler
+            pdf_handler.remove_metadata(input_path, output_path)
+            stats = {'total_redacoes': 0, 'por_tipo': {}, 'por_pagina': {}}
+
+        # Calcular hashes
+        hash_original = audit_logger.calculate_hash(input_path)
+        hash_anonimizado = audit_logger.calculate_hash(output_path)
+
+        # Registrar auditoria
+        regras_aplicadas = list(set(e.tipo for e in body.entities))
+        if body.custom_terms:
+            regras_aplicadas.append("OUTRO")
+
+        audit_logger.log_anonymization(
+            job_id=job_id,
+            arquivo_original=input_path,
+            arquivo_anonimizado=output_path,
+            total_redacoes=len(areas),
+            regras_aplicadas=regras_aplicadas,
+            dados_anonimizados=[
+                {'tipo': a.tipo, 'valor': a.valor_original[:3] + '***'}
+                for a in areas
+            ],
+            tempo_processamento_ms=0,
+            usuario=None,
+            ip_origem=request.client.host if request.client else None
+        )
+
+        # Retornar arquivo anonimizado
+        return FileResponse(
+            path=output_path,
+            filename=output_path.name,
+            media_type="application/pdf",
+            headers={
+                "X-Job-ID": job_id,
+                "X-Total-Redactions": str(len(areas)),
+                "X-Original-Hash": hash_original,
+                "X-Anonymized-Hash": hash_anonimizado,
+                "X-Anonymization-Mode": mode
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        detail = str(e) if str(e) else type(e).__name__
+        raise HTTPException(500, f"Erro ao anonimizar documento: {detail}")
 
 
 @router.post("/anonymize")

@@ -92,6 +92,34 @@ class AuditLog(BaseModel):
     ip_origem: Optional[str] = None
 
 
+class AnalyzePreviewResponse(BaseModel):
+    """Resposta da análise com preview visual"""
+    job_id: str
+    arquivo: str
+    total_paginas: int
+    tipo_pdf: str = Field(description="'nativo' ou 'imagem'")
+    preview_url: str = Field(description="URL para baixar o PDF com destaques visuais")
+    dados_sensiveis: list[SensitiveData]
+    total_identificados: int
+    tempo_processamento_ms: int
+
+
+class SelectiveAnonymizeItem(BaseModel):
+    """Item de dado sensível confirmado pelo usuário para anonimização"""
+    tipo: str
+    valor: str
+    pagina: int
+    posicao: dict = Field(description="Coordenadas {x, y, width, height}")
+
+
+class SelectiveAnonymizeRequest(BaseModel):
+    """Request para anonimização seletiva (após revisão do usuário)"""
+    job_id: str
+    entities: list[SelectiveAnonymizeItem] = Field(description="Entidades confirmadas pelo usuário")
+    custom_terms: list[str] = Field(default=[], description="Termos customizados adicionados pelo usuário")
+    mode: Optional[str] = Field(default=None, description="'redact' | 'pseudonymize'")
+
+
 class AllowlistEntry(BaseModel):
     """Entrada na lista branca"""
     nome: str

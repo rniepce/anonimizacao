@@ -4,9 +4,10 @@ import Header from './components/Header';
 import UploadSection from './components/UploadSection';
 import MetadataForm from './components/MetadataForm';
 import ProgressSection from './components/ProgressSection';
-import ResultsSection from './components/ResultsSection';
+import DocumentViewer from './components/DocumentViewer';
+import EntityPanel from './components/EntityPanel';
 import Footer from './components/Footer';
-import { analyzeDocument, anonymizeDocument } from './services/api';
+import { analyzePreview, anonymizeSelective } from './services/api';
 
 function App() {
     const [selectedFile, setSelectedFile] = useState(null);
@@ -18,11 +19,19 @@ function App() {
     });
 
     // UI state
-    const [view, setView] = useState('upload'); // 'upload' | 'progress' | 'results'
+    // 'upload' | 'progress' | 'review' | 'anonymizing' | 'download'
+    const [view, setView] = useState('upload');
     const [progressInfo, setProgressInfo] = useState({ title: '', status: '', progress: 0 });
-    const [analysisResults, setAnalysisResults] = useState(null);
-    const [anonymizationResults, setAnonymizationResults] = useState(null);
+
+    // Review state
+    const [previewData, setPreviewData] = useState(null); // response from analyze-preview
+    const [selectedEntityIds, setSelectedEntityIds] = useState(new Set());
+    const [customTerms, setCustomTerms] = useState([]);
+
+    // Download state
     const [anonymizedBlob, setAnonymizedBlob] = useState(null);
+    const [anonymizationMeta, setAnonymizationMeta] = useState(null);
+    const [isAnonymizing, setIsAnonymizing] = useState(false);
 
     const handleFileSelect = useCallback((file) => {
         const validExts = ['.pdf', '.docx'];
@@ -32,16 +41,18 @@ function App() {
             return;
         }
         setSelectedFile(file);
-        setAnalysisResults(null);
-        setAnonymizationResults(null);
+        setPreviewData(null);
         setAnonymizedBlob(null);
+        setAnonymizationMeta(null);
+        setCustomTerms([]);
     }, []);
 
     const handleRemoveFile = useCallback(() => {
         setSelectedFile(null);
-        setAnalysisResults(null);
-        setAnonymizationResults(null);
+        setPreviewData(null);
         setAnonymizedBlob(null);
+        setAnonymizationMeta(null);
+        setCustomTerms([]);
         setView('upload');
     }, []);
 
@@ -52,8 +63,8 @@ function App() {
             { progress: 40, status: 'Identificando padrões com Regex...' },
             { progress: 55, status: 'Analisando entidades com NLP...' },
             { progress: 70, status: 'Carregando modelos de IA...' },
-            { progress: 80, status: 'Aplicando anonimização...' },
-            { progress: 90, status: 'Finalizando processamento...' },
+            { progress: 80, status: 'Gerando preview com destaques...' },
+            { progress: 90, status: 'Finalizando análise...' },
         ];
 
         let i = 0;
@@ -62,7 +73,7 @@ function App() {
                 const stage = stages[i];
                 i++;
                 setProgressInfo({
-                    title: 'Processando...',
+                    title: 'Analisando...',
                     progress: stage.progress,
                     status: stage.status,
                 });
@@ -78,6 +89,7 @@ function App() {
         return () => clearInterval(interval);
     }, []);
 
+    // Step 1: Analyze and show review
     const handleAnalyze = useCallback(async () => {
         if (!selectedFile) return;
 
@@ -91,12 +103,17 @@ function App() {
         const stopSim = simulateProgress();
 
         try {
-            const data = await analyzeDocument(selectedFile, metadata);
+            const data = await analyzePreview(selectedFile, metadata);
             stopSim();
-            setAnalysisResults(data);
-            setAnonymizationResults(null);
+
+            setPreviewData(data);
+            // Select all entities by default
+            const allIds = new Set(data.dados_sensiveis.map((_, i) => i));
+            setSelectedEntityIds(allIds);
+            setCustomTerms([]);
             setAnonymizedBlob(null);
-            setView('results');
+            setAnonymizationMeta(null);
+            setView('review');
         } catch (error) {
             stopSim();
             console.error('Analyze error:', error);
@@ -107,33 +124,70 @@ function App() {
         }
     }, [selectedFile, metadata, simulateProgress]);
 
-    const handleAnonymize = useCallback(async () => {
-        if (!selectedFile) return;
+    // Step 2: Confirm and anonymize
+    const handleConfirmAnonymize = useCallback(async () => {
+        if (!previewData) return;
 
-        setView('progress');
-        setProgressInfo({
-            title: 'Anonimizando documento...',
-            status: 'Aplicando tarjas sobre dados sensíveis',
-            progress: 0,
-        });
-
-        const stopSim = simulateProgress();
+        setIsAnonymizing(true);
 
         try {
-            const { blob, meta } = await anonymizeDocument(selectedFile, metadata);
-            stopSim();
+            // Build the confirmed entities list
+            const confirmedEntities = previewData.dados_sensiveis
+                .filter((_, i) => selectedEntityIds.has(i))
+                .map((entity) => ({
+                    tipo: entity.tipo,
+                    valor: entity.valor,
+                    pagina: entity.pagina,
+                    posicao: entity.posicao,
+                }));
+
+            const { blob, meta } = await anonymizeSelective(
+                previewData.job_id,
+                confirmedEntities,
+                customTerms
+            );
+
             setAnonymizedBlob(blob);
-            setAnonymizationResults(meta);
-            setView('results');
+            setAnonymizationMeta(meta);
+            setView('download');
         } catch (error) {
-            stopSim();
             console.error('Anonymize error:', error);
-            setView('upload');
-            setTimeout(() => {
-                alert('Erro ao anonimizar documento: ' + (error?.message || 'Erro desconhecido'));
-            }, 100);
+            alert('Erro ao anonimizar documento: ' + (error?.message || 'Erro desconhecido'));
+        } finally {
+            setIsAnonymizing(false);
         }
-    }, [selectedFile, metadata, simulateProgress]);
+    }, [previewData, selectedEntityIds, customTerms]);
+
+    // Toggle entity selection
+    const handleToggleEntity = useCallback((index) => {
+        setSelectedEntityIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(index)) {
+                next.delete(index);
+            } else {
+                next.add(index);
+            }
+            return next;
+        });
+    }, []);
+
+    const handleSelectAll = useCallback(() => {
+        if (!previewData) return;
+        const allIds = new Set(previewData.dados_sensiveis.map((_, i) => i));
+        setSelectedEntityIds(allIds);
+    }, [previewData]);
+
+    const handleDeselectAll = useCallback(() => {
+        setSelectedEntityIds(new Set());
+    }, []);
+
+    const handleAddCustomTerm = useCallback((term) => {
+        setCustomTerms((prev) => [...prev, term]);
+    }, []);
+
+    const handleRemoveCustomTerm = useCallback((idx) => {
+        setCustomTerms((prev) => prev.filter((_, i) => i !== idx));
+    }, []);
 
     const handleDownload = useCallback(() => {
         if (!anonymizedBlob || !selectedFile) {
@@ -151,13 +205,29 @@ function App() {
         URL.revokeObjectURL(url);
     }, [anonymizedBlob, selectedFile]);
 
+    const handleBackToReview = useCallback(() => {
+        setAnonymizedBlob(null);
+        setAnonymizationMeta(null);
+        setView('review');
+    }, []);
+
+    const handleNewFile = useCallback(() => {
+        setSelectedFile(null);
+        setPreviewData(null);
+        setAnonymizedBlob(null);
+        setAnonymizationMeta(null);
+        setCustomTerms([]);
+        setSelectedEntityIds(new Set());
+        setView('upload');
+    }, []);
+
     return (
         <div className="container">
             <Header />
 
             <main className="main">
-                {/* Upload Section — always visible when file not selected or viewing results */}
-                {(view === 'upload' || view === 'results') && (
+                {/* Upload Section */}
+                {view === 'upload' && (
                     <section className="upload-section glass-card">
                         <div className="section-header">
                             <h2>📤 Upload de Documento</h2>
@@ -174,13 +244,9 @@ function App() {
                             <>
                                 <MetadataForm metadata={metadata} onChange={setMetadata} />
                                 <div className="action-buttons">
-                                    <button className="btn btn-secondary" onClick={handleAnalyze}>
+                                    <button className="btn btn-primary" onClick={handleAnalyze}>
                                         <span className="btn-icon-text">🔍</span>
-                                        Analisar
-                                    </button>
-                                    <button className="btn btn-primary" onClick={handleAnonymize}>
-                                        <span className="btn-icon-text">🔒</span>
-                                        Anonimizar
+                                        Analisar e Revisar
                                     </button>
                                 </div>
                             </>
@@ -197,14 +263,98 @@ function App() {
                     />
                 )}
 
-                {/* Results Section */}
-                {view === 'results' && (analysisResults || anonymizationResults) && (
-                    <ResultsSection
-                        analysisResults={analysisResults}
-                        anonymizationResults={anonymizationResults}
-                        onDownload={handleDownload}
-                        hasBlob={!!anonymizedBlob}
-                    />
+                {/* Review Section — Document Viewer + Entity Panel */}
+                {view === 'review' && previewData && (
+                    <section className="review-section">
+                        <div className="review-header glass-card">
+                            <div className="review-header-left">
+                                <h2>📋 Revisão de Anonimização</h2>
+                                <p>
+                                    Revise os dados identificados, desmarque o que deseja manter visível
+                                    e adicione termos customizados.
+                                </p>
+                            </div>
+                            <button className="btn btn-secondary" onClick={handleNewFile}>
+                                ← Novo Arquivo
+                            </button>
+                        </div>
+                        <div className="review-layout">
+                            <DocumentViewer previewUrl={previewData.preview_url} />
+                            <EntityPanel
+                                entities={previewData.dados_sensiveis}
+                                selectedIds={selectedEntityIds}
+                                onToggleEntity={handleToggleEntity}
+                                onSelectAll={handleSelectAll}
+                                onDeselectAll={handleDeselectAll}
+                                customTerms={customTerms}
+                                onAddCustomTerm={handleAddCustomTerm}
+                                onRemoveCustomTerm={handleRemoveCustomTerm}
+                                onConfirmAnonymize={handleConfirmAnonymize}
+                                isAnonymizing={isAnonymizing}
+                                totalPages={previewData.total_paginas}
+                                processingTimeMs={previewData.tempo_processamento_ms}
+                            />
+                        </div>
+                    </section>
+                )}
+
+                {/* Download Section */}
+                {view === 'download' && anonymizedBlob && (
+                    <section className="download-final-section glass-card">
+                        <div className="section-header">
+                            <h2>✅ Anonimização Concluída</h2>
+                        </div>
+
+                        <div className="download-stats">
+                            <div className="stat-card">
+                                <div className="stat-icon">🔒</div>
+                                <div className="stat-value">{anonymizationMeta?.totalRedactions ?? 0}</div>
+                                <div className="stat-label">Itens Anonimizados</div>
+                            </div>
+                            <div className="stat-card">
+                                <div className="stat-icon">📄</div>
+                                <div className="stat-value">{previewData?.total_paginas ?? 0}</div>
+                                <div className="stat-label">Páginas</div>
+                            </div>
+                        </div>
+
+                        {anonymizationMeta && (
+                            <div className="hash-info">
+                                <div className="hash-item">
+                                    <span className="hash-label">Hash Original:</span>
+                                    <code title={anonymizationMeta.hashOriginal}>
+                                        {anonymizationMeta.hashOriginal
+                                            ? anonymizationMeta.hashOriginal.substring(0, 16) + '...'
+                                            : '---'}
+                                    </code>
+                                </div>
+                                <div className="hash-item">
+                                    <span className="hash-label">Hash Anonimizado:</span>
+                                    <code title={anonymizationMeta.hashAnonymized}>
+                                        {anonymizationMeta.hashAnonymized
+                                            ? anonymizationMeta.hashAnonymized.substring(0, 16) + '...'
+                                            : '---'}
+                                    </code>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="download-actions">
+                            <button className="btn btn-success btn-large" onClick={handleDownload}>
+                                <span className="btn-icon-text">⬇️</span>
+                                Baixar PDF Anonimizado
+                            </button>
+                        </div>
+
+                        <div className="download-secondary-actions">
+                            <button className="btn btn-secondary" onClick={handleBackToReview}>
+                                ← Voltar para Revisão
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleNewFile}>
+                                📤 Novo Arquivo
+                            </button>
+                        </div>
+                    </section>
                 )}
             </main>
 

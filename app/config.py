@@ -23,11 +23,17 @@ class Settings(BaseSettings):
     
     # NLP / NER
     SPACY_MODEL: str = "pt_core_news_lg"
-    NER_ENGINE: str = "spacy"  # 'spacy' | 'gliner' | 'gliner_deep' | 'transformer'
+    NER_ENGINE: str = "spacy"  # 'spacy' | 'gliner' | 'gliner_deep' | 'transformer' | 'llm'
     NER_TRANSFORMER_MODEL: str = "pierreguillou/bert-base-cased-pt-lenerbr"
     GLINER_MODEL: str = "urchade/gliner_multi_pii-v1"
     GLINER_DEEP_MODEL: str = "Ai4Privacy/star-pii-gliner-multi-v1"
     GLINER_CONFIDENCE: float = 0.5
+    
+    # LLM (Ollama)
+    LLM_MODEL: str = "qwen3.5:9b"
+    LLM_OLLAMA_URL: str = "http://localhost:11434"
+    LLM_TIMEOUT: int = 120  # segundos (CPU pode ser lento)
+    LLM_TEMPERATURE: float = 0.1  # baixa para consistência
     
     # Detecção visual (documentos escaneados)
     DETECT_FACES: bool = True

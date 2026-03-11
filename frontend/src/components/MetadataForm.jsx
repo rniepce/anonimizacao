@@ -52,6 +52,7 @@ function MetadataForm({ metadata, onChange }) {
                         <option value="legacy">Padrão (SpaCy + Regex)</option>
                         <option value="standard">Avançado (GLiNER-PII - Lento)</option>
                         <option value="deep">Profundo (GLiNER Deep - Lento)</option>
+                        <option value="llm">🤖 LLM (Qwen 3.5 - Mais Lento)</option>
                     </select>
                 </div>
             </div>
