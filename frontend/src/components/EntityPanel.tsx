@@ -1,6 +1,9 @@
 import { useState, useMemo, useCallback } from 'react';
+import type { SensitiveEntity } from '../types';
 
-const TYPE_LABELS = {
+// ─── Constants ───────────────────────────────────────────────
+
+const TYPE_LABELS: Record<string, string> = {
     CPF: '🆔 CPF',
     CNPJ: '🏢 CNPJ',
     PROC_CNJ: '⚖️ Processo CNJ',
@@ -24,6 +27,29 @@ const TYPE_LABELS = {
     OUTRO: '❓ Outro',
 };
 
+// ─── Types ───────────────────────────────────────────────────
+
+interface IndexedEntity extends SensitiveEntity {
+    _index: number;
+}
+
+interface Props {
+    entities: SensitiveEntity[];
+    selectedIds: Set<number>;
+    onToggleEntity: (index: number) => void;
+    onSelectAll: () => void;
+    onDeselectAll: () => void;
+    customTerms: string[];
+    onAddCustomTerm: (term: string) => void;
+    onRemoveCustomTerm: (index: number) => void;
+    onConfirmAnonymize: () => void;
+    isAnonymizing: boolean;
+    totalPages: number;
+    processingTimeMs: number;
+}
+
+// ─── Component ───────────────────────────────────────────────
+
 function EntityPanel({
     entities,
     selectedIds,
@@ -37,14 +63,14 @@ function EntityPanel({
     isAnonymizing,
     totalPages,
     processingTimeMs,
-}) {
+}: Props) {
     const [filter, setFilter] = useState('');
     const [newTerm, setNewTerm] = useState('');
-    const [expandedTypes, setExpandedTypes] = useState(new Set());
+    const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
 
     // Group entities by type
     const grouped = useMemo(() => {
-        const groups = {};
+        const groups: Record<string, IndexedEntity[]> = {};
         entities.forEach((entity, index) => {
             const tipo = entity.tipo;
             if (!groups[tipo]) groups[tipo] = [];
@@ -57,7 +83,7 @@ function EntityPanel({
     const filteredGrouped = useMemo(() => {
         if (!filter.trim()) return grouped;
         const q = filter.toLowerCase();
-        const result = {};
+        const result: Record<string, IndexedEntity[]> = {};
         for (const [tipo, items] of Object.entries(grouped)) {
             const filtered = items.filter(
                 (item) =>
@@ -72,7 +98,7 @@ function EntityPanel({
     const selectedCount = selectedIds.size;
     const totalCount = entities.length;
 
-    const toggleType = useCallback((tipo) => {
+    const toggleType = useCallback((tipo: string) => {
         setExpandedTypes((prev) => {
             const next = new Set(prev);
             if (next.has(tipo)) {
@@ -92,11 +118,14 @@ function EntityPanel({
         }
     }, [newTerm, customTerms, onAddCustomTerm]);
 
-    const handleKeyDown = useCallback((e) => {
-        if (e.key === 'Enter') {
-            handleAddTerm();
-        }
-    }, [handleAddTerm]);
+    const handleKeyDown = useCallback(
+        (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                handleAddTerm();
+            }
+        },
+        [handleAddTerm]
+    );
 
     return (
         <div className="entity-panel">

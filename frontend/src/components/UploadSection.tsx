@@ -1,13 +1,19 @@
 import { useRef, useState, useCallback } from 'react';
 
-function formatFileSize(bytes) {
+function formatFileSize(bytes: number): string {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-function UploadSection({ selectedFile, onFileSelect, onRemoveFile }) {
-    const fileInputRef = useRef(null);
+interface Props {
+    selectedFile: File | null;
+    onFileSelect: (file: File) => void;
+    onRemoveFile: () => void;
+}
+
+function UploadSection({ selectedFile, onFileSelect, onRemoveFile }: Props) {
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragOver, setIsDragOver] = useState(false);
 
     const handleClick = useCallback(() => {
@@ -15,15 +21,15 @@ function UploadSection({ selectedFile, onFileSelect, onRemoveFile }) {
     }, []);
 
     const handleChange = useCallback(
-        (e) => {
-            if (e.target.files.length > 0) {
+        (e: React.ChangeEvent<HTMLInputElement>) => {
+            if (e.target.files && e.target.files.length > 0) {
                 onFileSelect(e.target.files[0]);
             }
         },
         [onFileSelect]
     );
 
-    const handleDragOver = useCallback((e) => {
+    const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         setIsDragOver(true);
     }, []);
@@ -33,7 +39,7 @@ function UploadSection({ selectedFile, onFileSelect, onRemoveFile }) {
     }, []);
 
     const handleDrop = useCallback(
-        (e) => {
+        (e: React.DragEvent) => {
             e.preventDefault();
             setIsDragOver(false);
             if (e.dataTransfer.files.length > 0) {

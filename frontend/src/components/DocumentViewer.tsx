@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 
-function DocumentViewer({ previewUrl, totalPages }) {
+interface Props {
+    previewUrl: string | null;
+    totalPages: number;
+}
+
+function DocumentViewer({ previewUrl, totalPages }: Props) {
     const [currentPage, setCurrentPage] = useState(1);
     const [zoom, setZoom] = useState(100);
     const [loading, setLoading] = useState(true);

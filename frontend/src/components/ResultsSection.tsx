@@ -1,21 +1,30 @@
-function maskValue(value) {
+import type { SensitiveEntity, AnonymizationMeta, AnalysisResults } from '../types';
+
+function maskValue(value: string | undefined): string {
     if (!value) return '***';
     if (value.length <= 4) return '***';
     return value.substring(0, 3) + '***';
 }
 
-function truncateHash(hash) {
+function truncateHash(hash: string | null | undefined): string {
     if (!hash) return '---';
     return hash.substring(0, 16) + '...';
 }
 
-function ResultsSection({ analysisResults, anonymizationResults, onDownload, hasBlob }) {
+interface Props {
+    analysisResults: AnalysisResults | null;
+    anonymizationResults: AnonymizationMeta | null;
+    onDownload: () => void;
+    hasBlob: boolean;
+}
+
+function ResultsSection({ analysisResults, anonymizationResults, onDownload, hasBlob }: Props) {
     const jobId = analysisResults?.job_id || anonymizationResults?.jobId || '---';
     const pages = analysisResults?.total_paginas || 0;
     const identified = analysisResults?.total_identificados || 0;
     const redacted = anonymizationResults?.totalRedactions ?? '-';
     const time = analysisResults?.tempo_processamento_ms || anonymizationResults?.processingTimeMs || 0;
-    const sensitiveData = analysisResults?.dados_sensiveis || [];
+    const sensitiveData: SensitiveEntity[] = analysisResults?.dados_sensiveis || [];
 
     return (
         <section className="results-section glass-card">
@@ -76,7 +85,7 @@ function ResultsSection({ analysisResults, anonymizationResults, onDownload, has
                                                 <div className="confidence-bar">
                                                     <div
                                                         className="confidence-fill"
-                                                        style={{ width: `${item.confianca * 100}%` }}
+                                                        style={{ width: `${(item.confianca ?? 0) * 100}%` }}
                                                     />
                                                 </div>
                                             </td>
@@ -104,7 +113,7 @@ function ResultsSection({ analysisResults, anonymizationResults, onDownload, has
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td colSpan="4" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                    <td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
                                         Nenhum dado sensível identificado
                                     </td>
                                 </tr>
@@ -124,13 +133,13 @@ function ResultsSection({ analysisResults, anonymizationResults, onDownload, has
                     <div className="hash-info">
                         <div className="hash-item">
                             <span className="hash-label">Hash Original:</span>
-                            <code title={anonymizationResults.hashOriginal}>
+                            <code title={anonymizationResults.hashOriginal ?? undefined}>
                                 {truncateHash(anonymizationResults.hashOriginal)}
                             </code>
                         </div>
                         <div className="hash-item">
                             <span className="hash-label">Hash Anonimizado:</span>
-                            <code title={anonymizationResults.hashAnonymized}>
+                            <code title={anonymizationResults.hashAnonymized ?? undefined}>
                                 {truncateHash(anonymizationResults.hashAnonymized)}
                             </code>
                         </div>

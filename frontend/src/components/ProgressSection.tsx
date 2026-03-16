@@ -1,4 +1,10 @@
-function ProgressSection({ title, status, progress }) {
+interface Props {
+    title: string;
+    status: string;
+    progress: number;
+}
+
+function ProgressSection({ title, status, progress }: Props) {
     return (
         <section className="progress-section glass-card">
             <div className="progress-header">

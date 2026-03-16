@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import type { Metadata, PreviewData, AnonymizationMeta, ProgressInfo } from './types';
 import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
 import UploadSection from './components/UploadSection';
@@ -9,9 +10,15 @@ import EntityPanel from './components/EntityPanel';
 import Footer from './components/Footer';
 import { analyzePreview, anonymizeSelective } from './services/api';
 
+// ─── View type ───────────────────────────────────────────────
+
+type AppView = 'upload' | 'progress' | 'review' | 'anonymizing' | 'download';
+
+// ─── Component ───────────────────────────────────────────────
+
 function App() {
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [metadata, setMetadata] = useState({
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [metadata, setMetadata] = useState<Metadata>({
         classeProcessual: '',
         vara: '',
         comarca: '',
@@ -19,23 +26,22 @@ function App() {
     });
 
     // UI state
-    // 'upload' | 'progress' | 'review' | 'anonymizing' | 'download'
-    const [view, setView] = useState('upload');
-    const [progressInfo, setProgressInfo] = useState({ title: '', status: '', progress: 0 });
+    const [view, setView] = useState<AppView>('upload');
+    const [progressInfo, setProgressInfo] = useState<ProgressInfo>({ title: '', status: '', progress: 0 });
 
     // Review state
-    const [previewData, setPreviewData] = useState(null); // response from analyze-preview
-    const [selectedEntityIds, setSelectedEntityIds] = useState(new Set());
-    const [customTerms, setCustomTerms] = useState([]);
+    const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+    const [selectedEntityIds, setSelectedEntityIds] = useState<Set<number>>(new Set());
+    const [customTerms, setCustomTerms] = useState<string[]>([]);
 
     // Download state
-    const [anonymizedBlob, setAnonymizedBlob] = useState(null);
-    const [anonymizationMeta, setAnonymizationMeta] = useState(null);
+    const [anonymizedBlob, setAnonymizedBlob] = useState<Blob | null>(null);
+    const [anonymizationMeta, setAnonymizationMeta] = useState<AnonymizationMeta | null>(null);
     const [isAnonymizing, setIsAnonymizing] = useState(false);
 
-    const handleFileSelect = useCallback((file) => {
+    const handleFileSelect = useCallback((file: File) => {
         const validExts = ['.pdf', '.docx'];
-        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        const ext = '.' + file.name.split('.').pop()?.toLowerCase();
         if (!validExts.includes(ext)) {
             alert('Por favor, selecione um arquivo PDF ou DOCX.');
             return;
@@ -108,7 +114,7 @@ function App() {
 
             setPreviewData(data);
             // Select all entities by default
-            const allIds = new Set(data.dados_sensiveis.map((_, i) => i));
+            const allIds = new Set(data.dados_sensiveis.map((_: unknown, i: number) => i));
             setSelectedEntityIds(allIds);
             setCustomTerms([]);
             setAnonymizedBlob(null);
@@ -119,7 +125,7 @@ function App() {
             console.error('Analyze error:', error);
             setView('upload');
             setTimeout(() => {
-                alert('Erro ao analisar documento: ' + (error?.message || 'Erro desconhecido'));
+                alert('Erro ao analisar documento: ' + ((error as Error)?.message || 'Erro desconhecido'));
             }, 100);
         }
     }, [selectedFile, metadata, simulateProgress]);
@@ -133,7 +139,7 @@ function App() {
         try {
             // Build the confirmed entities list
             const confirmedEntities = previewData.dados_sensiveis
-                .filter((_, i) => selectedEntityIds.has(i))
+                .filter((_: unknown, i: number) => selectedEntityIds.has(i))
                 .map((entity) => ({
                     tipo: entity.tipo,
                     valor: entity.valor,
@@ -152,14 +158,14 @@ function App() {
             setView('download');
         } catch (error) {
             console.error('Anonymize error:', error);
-            alert('Erro ao anonimizar documento: ' + (error?.message || 'Erro desconhecido'));
+            alert('Erro ao anonimizar documento: ' + ((error as Error)?.message || 'Erro desconhecido'));
         } finally {
             setIsAnonymizing(false);
         }
     }, [previewData, selectedEntityIds, customTerms]);
 
     // Toggle entity selection
-    const handleToggleEntity = useCallback((index) => {
+    const handleToggleEntity = useCallback((index: number) => {
         setSelectedEntityIds((prev) => {
             const next = new Set(prev);
             if (next.has(index)) {
@@ -173,7 +179,7 @@ function App() {
 
     const handleSelectAll = useCallback(() => {
         if (!previewData) return;
-        const allIds = new Set(previewData.dados_sensiveis.map((_, i) => i));
+        const allIds = new Set(previewData.dados_sensiveis.map((_: unknown, i: number) => i));
         setSelectedEntityIds(allIds);
     }, [previewData]);
 
@@ -181,12 +187,12 @@ function App() {
         setSelectedEntityIds(new Set());
     }, []);
 
-    const handleAddCustomTerm = useCallback((term) => {
+    const handleAddCustomTerm = useCallback((term: string) => {
         setCustomTerms((prev) => [...prev, term]);
     }, []);
 
-    const handleRemoveCustomTerm = useCallback((idx) => {
-        setCustomTerms((prev) => prev.filter((_, i) => i !== idx));
+    const handleRemoveCustomTerm = useCallback((idx: number) => {
+        setCustomTerms((prev) => prev.filter((_: string, i: number) => i !== idx));
     }, []);
 
     const handleDownload = useCallback(() => {
@@ -322,7 +328,7 @@ function App() {
                             <div className="hash-info">
                                 <div className="hash-item">
                                     <span className="hash-label">Hash Original:</span>
-                                    <code title={anonymizationMeta.hashOriginal}>
+                                    <code title={anonymizationMeta.hashOriginal ?? undefined}>
                                         {anonymizationMeta.hashOriginal
                                             ? anonymizationMeta.hashOriginal.substring(0, 16) + '...'
                                             : '---'}
@@ -330,7 +336,7 @@ function App() {
                                 </div>
                                 <div className="hash-item">
                                     <span className="hash-label">Hash Anonimizado:</span>
-                                    <code title={anonymizationMeta.hashAnonymized}>
+                                    <code title={anonymizationMeta.hashAnonymized ?? undefined}>
                                         {anonymizationMeta.hashAnonymized
                                             ? anonymizationMeta.hashAnonymized.substring(0, 16) + '...'
                                             : '---'}

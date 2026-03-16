@@ -1,10 +1,17 @@
 import { useCallback } from 'react';
+import type { Metadata } from '../types';
 
-function MetadataForm({ metadata, onChange }) {
+interface Props {
+    metadata: Metadata;
+    onChange: React.Dispatch<React.SetStateAction<Metadata>>;
+}
+
+function MetadataForm({ metadata, onChange }: Props) {
     const handleChange = useCallback(
-        (field) => (e) => {
-            onChange((prev) => ({ ...prev, [field]: e.target.value }));
-        },
+        (field: keyof Metadata) =>
+            (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+                onChange((prev) => ({ ...prev, [field]: e.target.value }));
+            },
         [onChange]
     );
 

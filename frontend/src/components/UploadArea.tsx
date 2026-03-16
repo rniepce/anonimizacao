@@ -1,17 +1,23 @@
 import { useRef, useState, useCallback } from 'react';
 
-function formatFileSize(bytes) {
+function formatFileSize(bytes: number): string {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export default function UploadArea({ selectedFile, onFileSelect, onFileRemove }) {
-    const fileInputRef = useRef(null);
+interface Props {
+    selectedFile: File | null;
+    onFileSelect: (file: File) => void;
+    onFileRemove: () => void;
+}
+
+export default function UploadArea({ selectedFile, onFileSelect, onFileRemove }: Props) {
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [dragover, setDragover] = useState(false);
 
     const handleFiles = useCallback(
-        (files) => {
+        (files: FileList) => {
             if (files.length === 0) return;
             const file = files[0];
             const validTypes = [
@@ -28,7 +34,7 @@ export default function UploadArea({ selectedFile, onFileSelect, onFileRemove })
     );
 
     const handleDrop = useCallback(
-        (e) => {
+        (e: React.DragEvent) => {
             e.preventDefault();
             setDragover(false);
             handleFiles(e.dataTransfer.files);
@@ -56,7 +62,7 @@ export default function UploadArea({ selectedFile, onFileSelect, onFileRemove })
             className={`upload-area${dragover ? ' dragover' : ''}`}
             id="uploadArea"
             onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => {
+            onDragOver={(e: React.DragEvent) => {
                 e.preventDefault();
                 setDragover(true);
             }}
@@ -74,7 +80,9 @@ export default function UploadArea({ selectedFile, onFileSelect, onFileRemove })
                 id="fileInput"
                 accept=".pdf,.docx"
                 hidden
-                onChange={(e) => handleFiles(e.target.files)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    if (e.target.files) handleFiles(e.target.files);
+                }}
             />
             <div className="upload-formats">
                 <span className="format-tag">PDF</span>
