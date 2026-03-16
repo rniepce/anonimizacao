@@ -9,6 +9,8 @@ import DocumentViewer from './components/DocumentViewer';
 import EntityPanel from './components/EntityPanel';
 import Footer from './components/Footer';
 import { analyzePreview, anonymizeSelective } from './services/api';
+import { Toaster, toast } from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // ─── View type ───────────────────────────────────────────────
 
@@ -33,6 +35,7 @@ function App() {
     const [previewData, setPreviewData] = useState<PreviewData | null>(null);
     const [selectedEntityIds, setSelectedEntityIds] = useState<Set<number>>(new Set());
     const [customTerms, setCustomTerms] = useState<string[]>([]);
+    const [viewerPage, setViewerPage] = useState(1);
 
     // Download state
     const [anonymizedBlob, setAnonymizedBlob] = useState<Blob | null>(null);
@@ -43,7 +46,7 @@ function App() {
         const validExts = ['.pdf', '.docx'];
         const ext = '.' + file.name.split('.').pop()?.toLowerCase();
         if (!validExts.includes(ext)) {
-            alert('Por favor, selecione um arquivo PDF ou DOCX.');
+            toast.error('Por favor, selecione um arquivo PDF ou DOCX.');
             return;
         }
         setSelectedFile(file);
@@ -124,9 +127,7 @@ function App() {
             stopSim();
             console.error('Analyze error:', error);
             setView('upload');
-            setTimeout(() => {
-                alert('Erro ao analisar documento: ' + ((error as Error)?.message || 'Erro desconhecido'));
-            }, 100);
+            toast.error('Erro ao analisar documento: ' + ((error as Error)?.message || 'Erro desconhecido'));
         }
     }, [selectedFile, metadata, simulateProgress]);
 
@@ -158,7 +159,7 @@ function App() {
             setView('download');
         } catch (error) {
             console.error('Anonymize error:', error);
-            alert('Erro ao anonimizar documento: ' + ((error as Error)?.message || 'Erro desconhecido'));
+            toast.error('Erro ao anonimizar documento: ' + ((error as Error)?.message || 'Erro desconhecido'));
         } finally {
             setIsAnonymizing(false);
         }
@@ -197,7 +198,7 @@ function App() {
 
     const handleDownload = useCallback(() => {
         if (!anonymizedBlob || !selectedFile) {
-            alert('Nenhum arquivo disponível para download');
+            toast.error('Nenhum arquivo disponível para download');
             return;
         }
 
@@ -232,136 +233,171 @@ function App() {
             <Header />
 
             <main className="main">
-                {/* Upload Section */}
-                {view === 'upload' && (
-                    <section className="upload-section glass-card">
-                        <div className="section-header">
-                            <h2>📤 Upload de Documento</h2>
-                            <p>Envie seu PDF ou DOCX para análise e anonimização</p>
-                        </div>
-
-                        <UploadSection
-                            selectedFile={selectedFile}
-                            onFileSelect={handleFileSelect}
-                            onRemoveFile={handleRemoveFile}
-                        />
-
-                        {selectedFile && (
-                            <>
-                                <MetadataForm metadata={metadata} onChange={setMetadata} />
-                                <div className="action-buttons">
-                                    <button className="btn btn-primary" onClick={handleAnalyze}>
-                                        <span className="btn-icon-text">🔍</span>
-                                        Analisar e Revisar
-                                    </button>
-                                </div>
-                            </>
-                        )}
-                    </section>
-                )}
-
-                {/* Progress Section */}
-                {view === 'progress' && (
-                    <ProgressSection
-                        title={progressInfo.title}
-                        status={progressInfo.status}
-                        progress={progressInfo.progress}
-                    />
-                )}
-
-                {/* Review Section — Document Viewer + Entity Panel */}
-                {view === 'review' && previewData && (
-                    <section className="review-section">
-                        <div className="review-header glass-card">
-                            <div className="review-header-left">
-                                <h2>📋 Revisão de Anonimização</h2>
-                                <p>
-                                    Revise os dados identificados, desmarque o que deseja manter visível
-                                    e adicione termos customizados.
-                                </p>
+                <AnimatePresence mode="wait">
+                    {/* Upload Section */}
+                    {view === 'upload' && (
+                        <motion.section 
+                            key="upload"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.3 }}
+                            className="upload-section glass-card"
+                        >
+                            <div className="section-header">
+                                <h2>📤 Upload de Documento</h2>
+                                <p>Envie seu PDF ou DOCX para análise e anonimização</p>
                             </div>
-                            <button className="btn btn-secondary" onClick={handleNewFile}>
-                                ← Novo Arquivo
-                            </button>
-                        </div>
-                        <div className="review-layout">
-                            <DocumentViewer previewUrl={previewData.preview_url} totalPages={previewData.total_paginas} />
-                            <EntityPanel
-                                entities={previewData.dados_sensiveis}
-                                selectedIds={selectedEntityIds}
-                                onToggleEntity={handleToggleEntity}
-                                onSelectAll={handleSelectAll}
-                                onDeselectAll={handleDeselectAll}
-                                customTerms={customTerms}
-                                onAddCustomTerm={handleAddCustomTerm}
-                                onRemoveCustomTerm={handleRemoveCustomTerm}
-                                onConfirmAnonymize={handleConfirmAnonymize}
-                                isAnonymizing={isAnonymizing}
-                                totalPages={previewData.total_paginas}
-                                processingTimeMs={previewData.tempo_processamento_ms}
+
+                            <UploadSection
+                                selectedFile={selectedFile}
+                                onFileSelect={handleFileSelect}
+                                onRemoveFile={handleRemoveFile}
                             />
-                        </div>
-                    </section>
-                )}
 
-                {/* Download Section */}
-                {view === 'download' && anonymizedBlob && (
-                    <section className="download-final-section glass-card">
-                        <div className="section-header">
-                            <h2>✅ Anonimização Concluída</h2>
-                        </div>
+                            {selectedFile && (
+                                <>
+                                    <MetadataForm metadata={metadata} onChange={setMetadata} />
+                                    <div className="action-buttons">
+                                        <button className="btn btn-primary" onClick={handleAnalyze}>
+                                            <span className="btn-icon-text">🔍</span>
+                                            Analisar e Revisar
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </motion.section>
+                    )}
 
-                        <div className="download-stats">
-                            <div className="stat-card">
-                                <div className="stat-icon">🔒</div>
-                                <div className="stat-value">{anonymizationMeta?.totalRedactions ?? 0}</div>
-                                <div className="stat-label">Itens Anonimizados</div>
-                            </div>
-                            <div className="stat-card">
-                                <div className="stat-icon">📄</div>
-                                <div className="stat-value">{previewData?.total_paginas ?? 0}</div>
-                                <div className="stat-label">Páginas</div>
-                            </div>
-                        </div>
+                    {/* Progress Section */}
+                    {view === 'progress' && (
+                        <motion.div 
+                            key="progress"
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            transition={{ duration: 0.3 }}
+                        >
+                            <ProgressSection
+                                title={progressInfo.title}
+                                status={progressInfo.status}
+                                progress={progressInfo.progress}
+                            />
+                        </motion.div>
+                    )}
 
-                        {anonymizationMeta && (
-                            <div className="hash-info">
-                                <div className="hash-item">
-                                    <span className="hash-label">Hash Original:</span>
-                                    <code title={anonymizationMeta.hashOriginal ?? undefined}>
-                                        {anonymizationMeta.hashOriginal
-                                            ? anonymizationMeta.hashOriginal.substring(0, 16) + '...'
-                                            : '---'}
-                                    </code>
+                    {/* Review Section — Document Viewer + Entity Panel */}
+                    {view === 'review' && previewData && (
+                        <motion.section 
+                            key="review"
+                            initial={{ opacity: 0, x: 50 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.4 }}
+                            className="review-section"
+                        >
+                            <div className="review-header glass-card">
+                                <div className="review-header-left">
+                                    <h2>📋 Revisão de Anonimização</h2>
+                                    <p>
+                                        Revise os dados identificados, desmarque o que deseja manter visível
+                                        e adicione termos customizados.
+                                    </p>
                                 </div>
-                                <div className="hash-item">
-                                    <span className="hash-label">Hash Anonimizado:</span>
-                                    <code title={anonymizationMeta.hashAnonymized ?? undefined}>
-                                        {anonymizationMeta.hashAnonymized
-                                            ? anonymizationMeta.hashAnonymized.substring(0, 16) + '...'
-                                            : '---'}
-                                    </code>
+                                <button className="btn btn-secondary" onClick={handleNewFile}>
+                                    ← Novo Arquivo
+                                </button>
+                            </div>
+                            <div className="review-layout">
+                                <DocumentViewer 
+                                    previewUrl={previewData.preview_url} 
+                                    totalPages={previewData.total_paginas} 
+                                    currentPage={viewerPage}
+                                    onPageChange={setViewerPage}
+                                />
+                                <EntityPanel
+                                    entities={previewData.dados_sensiveis}
+                                    selectedIds={selectedEntityIds}
+                                    onToggleEntity={handleToggleEntity}
+                                    onSelectAll={handleSelectAll}
+                                    onDeselectAll={handleDeselectAll}
+                                    customTerms={customTerms}
+                                    onAddCustomTerm={handleAddCustomTerm}
+                                    onRemoveCustomTerm={handleRemoveCustomTerm}
+                                    onConfirmAnonymize={handleConfirmAnonymize}
+                                    isAnonymizing={isAnonymizing}
+                                    totalPages={previewData.total_paginas}
+                                    processingTimeMs={previewData.tempo_processamento_ms}
+                                    onEntityClick={setViewerPage}
+                                />
+                            </div>
+                        </motion.section>
+                    )}
+
+                    {/* Download Section */}
+                    {view === 'download' && anonymizedBlob && (
+                        <motion.section 
+                            key="download"
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.4, type: 'spring' }}
+                            className="download-final-section glass-card"
+                        >
+                            <div className="section-header">
+                                <h2>✅ Anonimização Concluída</h2>
+                            </div>
+
+                            <div className="download-stats">
+                                <div className="stat-card">
+                                    <div className="stat-icon">🔒</div>
+                                    <div className="stat-value">{anonymizationMeta?.totalRedactions ?? 0}</div>
+                                    <div className="stat-label">Itens Anonimizados</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-icon">📄</div>
+                                    <div className="stat-value">{previewData?.total_paginas ?? 0}</div>
+                                    <div className="stat-label">Páginas</div>
                                 </div>
                             </div>
-                        )}
 
-                        <div className="download-actions">
-                            <button className="btn btn-success btn-large" onClick={handleDownload}>
-                                <span className="btn-icon-text">⬇️</span>
-                                Baixar PDF Anonimizado
-                            </button>
-                        </div>
+                            {anonymizationMeta && (
+                                <div className="hash-info">
+                                    <div className="hash-item">
+                                        <span className="hash-label">Hash Original:</span>
+                                        <code title={anonymizationMeta.hashOriginal ?? undefined}>
+                                            {anonymizationMeta.hashOriginal
+                                                ? anonymizationMeta.hashOriginal.substring(0, 16) + '...'
+                                                : '---'}
+                                        </code>
+                                    </div>
+                                    <div className="hash-item">
+                                        <span className="hash-label">Hash Anonimizado:</span>
+                                        <code title={anonymizationMeta.hashAnonymized ?? undefined}>
+                                            {anonymizationMeta.hashAnonymized
+                                                ? anonymizationMeta.hashAnonymized.substring(0, 16) + '...'
+                                                : '---'}
+                                        </code>
+                                    </div>
+                                </div>
+                            )}
 
-                        <div className="download-secondary-actions">
-                            <button className="btn btn-secondary" onClick={handleBackToReview}>
-                                ← Voltar para Revisão
-                            </button>
-                            <button className="btn btn-secondary" onClick={handleNewFile}>
-                                📤 Novo Arquivo
-                            </button>
-                        </div>
-                    </section>
-                )}
+                            <div className="download-actions">
+                                <button className="btn btn-success btn-large" onClick={handleDownload}>
+                                    <span className="btn-icon-text">⬇️</span>
+                                    Baixar PDF Anonimizado
+                                </button>
+                            </div>
+
+                            <div className="download-secondary-actions">
+                                <button className="btn btn-secondary" onClick={handleBackToReview}>
+                                    ← Voltar para Revisão
+                                </button>
+                                <button className="btn btn-secondary" onClick={handleNewFile}>
+                                    📤 Novo Arquivo
+                                </button>
+                            </div>
+                        </motion.section>
+                    )}
+                </AnimatePresence>
             </main>
 
             <Footer />
@@ -372,6 +408,14 @@ function App() {
 function AppWrapper() {
     return (
         <ErrorBoundary>
+            <Toaster position="top-right" toastOptions={{
+                className: '',
+                style: {
+                    background: '#252542',
+                    color: '#f8fafc',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                },
+            }} />
             <App />
         </ErrorBoundary>
     );
