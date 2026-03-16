@@ -14,9 +14,9 @@
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
   --color-text-primary: #f8fafc;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
-  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text-secondary: #cbd5e1; /* Lighter for better contrast */
+  --color-text-muted: #94a3b8; /* Lighter for better contrast */
+  --color-border: rgba(255, 255, 255, 0.15); /* Slightly more visible borders */
 
   /* Glass Effect */
   --glass-bg: rgba(30, 30, 50, 0.6);
