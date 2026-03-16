@@ -226,6 +226,51 @@ async def get_preview(job_id: str):
     )
 
 
+@router.get("/preview/{job_id}/page/{page_num}")
+async def get_preview_page(job_id: str, page_num: int):
+    """
+    Renderiza uma página do PDF de preview como imagem PNG.
+    Usa PyMuPDF para renderização server-side (funciona em todos os browsers).
+    """
+    import fitz
+    import io
+
+    preview_path = settings.UPLOAD_DIR / f"{job_id}_preview.pdf"
+
+    if not preview_path.exists():
+        raise HTTPException(404, "Preview não encontrado")
+
+    try:
+        doc = fitz.open(str(preview_path))
+
+        if page_num < 1 or page_num > len(doc):
+            doc.close()
+            raise HTTPException(400, f"Página {page_num} inválida. Total: {len(doc)}")
+
+        page = doc[page_num - 1]
+        # Renderizar em resolução adequada (2x = 144 DPI)
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = page.get_pixmap(matrix=mat)
+
+        img_bytes = pix.tobytes("png")
+        doc.close()
+
+        return StreamingResponse(
+            io.BytesIO(img_bytes),
+            media_type="image/png",
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "X-Page-Number": str(page_num),
+                "X-Total-Pages": str(len(doc) if not doc.is_closed else page_num),
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Erro ao renderizar página: {str(e)}")
+
+
 @router.post("/anonymize-selective")
 async def anonymize_selective(
     request: Request,

@@ -279,7 +279,7 @@ function App() {
                             </button>
                         </div>
                         <div className="review-layout">
-                            <DocumentViewer previewUrl={previewData.preview_url} />
+                            <DocumentViewer previewUrl={previewData.preview_url} totalPages={previewData.total_paginas} />
                             <EntityPanel
                                 entities={previewData.dados_sensiveis}
                                 selectedIds={selectedEntityIds}
