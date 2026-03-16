@@ -102,6 +102,7 @@ class AnalyzePreviewResponse(BaseModel):
     dados_sensiveis: list[SensitiveData]
     total_identificados: int
     tempo_processamento_ms: int
+    texto_por_pagina: dict[int, str] = Field(default_factory=dict, description="Texto extraído por página (página -> texto)")
 
 
 class SelectiveAnonymizeItem(BaseModel):

@@ -25,6 +25,7 @@ export interface PreviewData {
     total_paginas: number;
     total_identificados: number;
     tempo_processamento_ms: number;
+    texto_por_pagina: Record<string, string>;
 }
 
 /** Metadados retornados após anonimização. */

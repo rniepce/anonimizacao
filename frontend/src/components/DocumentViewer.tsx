@@ -1,29 +1,29 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import type { SensitiveEntity } from '../types';
 
 interface Props {
-    previewUrl: string | null;
+    textByPage: Record<string, string>;
     totalPages: number;
     currentPage: number;
     onPageChange: (page: number) => void;
+    entities: SensitiveEntity[];
+    selectedEntityIds: Set<number>;
+    customTerms: string[];
+    onWordClick: (word: string) => void;
 }
 
-function DocumentViewer({ previewUrl, totalPages, currentPage, onPageChange }: Props) {
+function DocumentViewer({
+    textByPage,
+    totalPages,
+    currentPage,
+    onPageChange,
+    entities,
+    selectedEntityIds,
+    customTerms,
+    onWordClick,
+}: Props) {
     const [zoom, setZoom] = useState(100);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
-    const [imgSrc, setImgSrc] = useState('');
-
-    // Extract job_id from previewUrl like "/api/preview/abc-123"
-    const jobId = previewUrl ? previewUrl.split('/').pop() : null;
     const pages = totalPages || 1;
-
-    // Build image URL for current page
-    useEffect(() => {
-        if (!jobId) return;
-        setLoading(true);
-        setError(false);
-        setImgSrc(`/api/preview/${jobId}/page/${currentPage}?t=${Date.now()}`);
-    }, [jobId, currentPage]);
 
     const handlePrevPage = useCallback(() => {
         onPageChange(Math.max(1, currentPage - 1));
@@ -33,32 +33,133 @@ function DocumentViewer({ previewUrl, totalPages, currentPage, onPageChange }: P
         onPageChange(Math.min(pages, currentPage + 1));
     }, [pages, currentPage, onPageChange]);
 
-    const handleZoomIn = () => setZoom((z) => Math.min(z + 25, 250));
-    const handleZoomOut = () => setZoom((z) => Math.max(z - 25, 50));
+    const handleZoomIn = () => setZoom((z) => Math.min(z + 25, 200));
+    const handleZoomOut = () => setZoom((z) => Math.max(z - 25, 75));
     const handleZoomReset = () => setZoom(100);
 
-    const handleWheel = useCallback((e: React.WheelEvent) => {
-        if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            if (e.deltaY < 0) {
-                setZoom((z) => Math.max(z - 10, 50)); // Scroll up: zoom in? Wait, standard is wheel down (positive delta) is zoom out.
-            } else {
-                setZoom((z) => Math.min(z + 10, 250));
+    // Get page text
+    const pageText = textByPage[String(currentPage)] || '';
+
+    // Build a set of entity values on this page that are currently selected
+    const highlightedValues = useMemo(() => {
+        const set = new Set<string>();
+        entities.forEach((entity, idx) => {
+            if (entity.pagina === currentPage && selectedEntityIds.has(idx)) {
+                set.add(entity.valor.toLowerCase());
             }
+        });
+        return set;
+    }, [entities, currentPage, selectedEntityIds]);
+
+    // Build set of custom terms (lowercased)
+    const customTermsSet = useMemo(() => {
+        return new Set(customTerms.map((t) => t.toLowerCase()));
+    }, [customTerms]);
+
+    // Build entity type lookup for color-coding
+    const entityTypeMap = useMemo(() => {
+        const map = new Map<string, string>();
+        entities.forEach((entity, idx) => {
+            if (selectedEntityIds.has(idx)) {
+                map.set(entity.valor.toLowerCase(), entity.tipo);
+            }
+        });
+        return map;
+    }, [entities, selectedEntityIds]);
+
+    // Render text with highlights
+    const renderTextContent = useCallback(() => {
+        if (!pageText) {
+            return (
+                <div className="viewer-empty">
+                    <span className="viewer-empty-icon">📄</span>
+                    <p>Texto não disponível para esta página.</p>
+                </div>
+            );
         }
-    }, []);
 
-    const handleImgLoad = () => {
-        setLoading(false);
-        setError(false);
-    };
+        // Split text into words while preserving whitespace structure
+        const lines = pageText.split('\n');
 
-    const handleImgError = () => {
-        setLoading(false);
-        setError(true);
-    };
+        return lines.map((line, lineIdx) => {
+            if (line.trim() === '') {
+                return <br key={lineIdx} />;
+            }
 
-    if (!previewUrl) {
+            // Split line into words, preserving spaces
+            const words = line.split(/(\s+)/);
+
+            return (
+                <div key={lineIdx} className="viewer-text-line">
+                    {words.map((word, wordIdx) => {
+                        // Whitespace — keep as-is
+                        if (/^\s+$/.test(word)) {
+                            return <span key={wordIdx}>{word}</span>;
+                        }
+                        if (!word) return null;
+
+                        const wordLower = word.toLowerCase().replace(/[.,;:!?()\[\]{}""'']/g, '');
+
+                        // Check if this word is part of an entity highlight
+                        let isHighlighted = false;
+                        let entityType = '';
+                        for (const [entityValue, type] of entityTypeMap) {
+                            if (entityValue.includes(wordLower) || wordLower.includes(entityValue)) {
+                                isHighlighted = true;
+                                entityType = type;
+                                break;
+                            }
+                        }
+
+                        // Check against full entity values more robustly
+                        if (!isHighlighted) {
+                            for (const val of highlightedValues) {
+                                if (val.includes(wordLower) && wordLower.length > 2) {
+                                    isHighlighted = true;
+                                    entityType = entityTypeMap.get(val) || '';
+                                    break;
+                                }
+                            }
+                        }
+
+                        const isCustom = customTermsSet.has(wordLower);
+
+                        let className = 'viewer-word';
+                        if (isHighlighted) {
+                            className += ' highlighted';
+                            className += ` type-${entityType.toLowerCase()}`;
+                        }
+                        if (isCustom) {
+                            className += ' custom-selected';
+                        }
+
+                        return (
+                            <span
+                                key={wordIdx}
+                                className={className}
+                                onClick={() => {
+                                    if (!isHighlighted && !isCustom && wordLower.length > 1) {
+                                        onWordClick(word.replace(/[.,;:!?()\[\]{}""'']/g, ''));
+                                    }
+                                }}
+                                title={
+                                    isHighlighted
+                                        ? `🔒 ${entityType}: será anonimizado`
+                                        : isCustom
+                                        ? '✅ Termo customizado selecionado'
+                                        : 'Clique para adicionar como termo de anonimização'
+                                }
+                            >
+                                {word}
+                            </span>
+                        );
+                    })}
+                </div>
+            );
+        });
+    }, [pageText, highlightedValues, customTermsSet, entityTypeMap, onWordClick]);
+
+    if (Object.keys(textByPage).length === 0) {
         return (
             <div className="document-viewer">
                 <div className="viewer-empty">
@@ -73,7 +174,6 @@ function DocumentViewer({ previewUrl, totalPages, currentPage, onPageChange }: P
         <div className="document-viewer">
             <div className="viewer-toolbar">
                 <div className="viewer-toolbar-left">
-                    {/* Page navigation */}
                     <button
                         className="viewer-btn"
                         onClick={handlePrevPage}
@@ -94,11 +194,14 @@ function DocumentViewer({ previewUrl, totalPages, currentPage, onPageChange }: P
                         ▶
                     </button>
                 </div>
+                <div className="viewer-toolbar-center">
+                    <span className="viewer-hint">💡 Clique em uma palavra para anonimizar</span>
+                </div>
                 <div className="viewer-toolbar-right">
                     <button
                         className="viewer-btn"
                         onClick={handleZoomOut}
-                        disabled={zoom <= 50}
+                        disabled={zoom <= 75}
                         title="Diminuir zoom"
                     >
                         −
@@ -113,62 +216,20 @@ function DocumentViewer({ previewUrl, totalPages, currentPage, onPageChange }: P
                     <button
                         className="viewer-btn"
                         onClick={handleZoomIn}
-                        disabled={zoom >= 250}
+                        disabled={zoom >= 200}
                         title="Aumentar zoom"
                     >
                         +
                     </button>
                 </div>
             </div>
-            <div className="viewer-content" onWheel={handleWheel}>
-                {loading && !error && (
-                    <div className="viewer-loading">
-                        <div className="skeleton-page" />
-                        <p>Carregando página {currentPage}...</p>
-                    </div>
-                )}
-
-                {error && (
-                    <div className="viewer-empty">
-                        <span className="viewer-empty-icon">⚠️</span>
-                        <p>Não foi possível carregar a página {currentPage}.</p>
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                setError(false);
-                                setLoading(true);
-                                setImgSrc(`/api/preview/${jobId}/page/${currentPage}?t=${Date.now()}`);
-                            }}
-                        >
-                            Tentar novamente
-                        </button>
-                        <a
-                            href={previewUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="viewer-fallback-link"
-                        >
-                            Baixar PDF completo
-                        </a>
-                    </div>
-                )}
-
-                {imgSrc && !error && (
-                    <div className="viewer-img-wrapper" style={{ textAlign: 'center' }}>
-                        <img
-                            src={imgSrc}
-                            alt={`Página ${currentPage}`}
-                            className="viewer-page-img"
-                            style={{
-                                width: `${zoom}%`,
-                                maxWidth: 'none',
-                            }}
-                            onLoad={handleImgLoad}
-                            onError={handleImgError}
-                            draggable={false}
-                        />
-                    </div>
-                )}
+            <div className="viewer-content">
+                <div
+                    className="viewer-text-content"
+                    style={{ fontSize: `${zoom}%` }}
+                >
+                    {renderTextContent()}
+                </div>
             </div>
         </div>
     );

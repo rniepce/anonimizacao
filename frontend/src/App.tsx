@@ -320,10 +320,14 @@ function App() {
                             </div>
                             <div className="review-layout">
                                 <DocumentViewer 
-                                    previewUrl={previewData.preview_url} 
+                                    textByPage={previewData.texto_por_pagina}
                                     totalPages={previewData.total_paginas} 
                                     currentPage={viewerPage}
                                     onPageChange={setViewerPage}
+                                    entities={previewData.dados_sensiveis}
+                                    selectedEntityIds={selectedEntityIds}
+                                    customTerms={customTerms}
+                                    onWordClick={handleAddCustomTerm}
                                 />
                                 <EntityPanel
                                     entities={previewData.dados_sensiveis}

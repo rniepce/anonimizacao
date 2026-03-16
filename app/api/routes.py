@@ -150,6 +150,17 @@ async def analyze_preview(
         # Analisar documento
         dados = pipeline.analyze_only(temp_path, ner_mode=ner_mode)
 
+        # Extrair texto por página para o visualizador interativo
+        import fitz as fitz_lib
+        texto_por_pagina: dict[int, str] = {}
+        try:
+            doc_text = fitz_lib.open(str(temp_path))
+            for page_num_idx, page_obj in enumerate(doc_text, start=1):
+                texto_por_pagina[page_num_idx] = page_obj.get_text()
+            doc_text.close()
+        except Exception:
+            pass  # Se falhar, retorna vazio — viewer mostrará aviso
+
         # Gerar PDF de preview com highlights visuais
         from app.core.redactor import redactor, RedactionArea
         areas = [
@@ -190,7 +201,8 @@ async def analyze_preview(
                 for d in dados
             ],
             total_identificados=len(dados),
-            tempo_processamento_ms=tempo_ms
+            tempo_processamento_ms=tempo_ms,
+            texto_por_pagina=texto_por_pagina,
         )
 
     except Exception as e:
