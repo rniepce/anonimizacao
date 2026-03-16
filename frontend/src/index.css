@@ -903,8 +903,10 @@ body {
    ============================================ */
 
 .document-viewer {
-  flex: 1;
-  min-width: 0;
+  width: 60%;
+  min-width: 400px;
+  max-width: 80%;
+  resize: horizontal;
   display: flex;
   flex-direction: column;
   background: var(--glass-bg);
@@ -1049,8 +1051,8 @@ body {
    ============================================ */
 
 .entity-panel {
-  width: 380px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
   background: var(--glass-bg);

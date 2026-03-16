@@ -3,10 +3,11 @@ import { useState, useEffect, useCallback } from 'react';
 interface Props {
     previewUrl: string | null;
     totalPages: number;
+    currentPage: number;
+    onPageChange: (page: number) => void;
 }
 
-function DocumentViewer({ previewUrl, totalPages }: Props) {
-    const [currentPage, setCurrentPage] = useState(1);
+function DocumentViewer({ previewUrl, totalPages, currentPage, onPageChange }: Props) {
     const [zoom, setZoom] = useState(100);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -25,16 +26,27 @@ function DocumentViewer({ previewUrl, totalPages }: Props) {
     }, [jobId, currentPage]);
 
     const handlePrevPage = useCallback(() => {
-        setCurrentPage((p) => Math.max(1, p - 1));
-    }, []);
+        onPageChange(Math.max(1, currentPage - 1));
+    }, [currentPage, onPageChange]);
 
     const handleNextPage = useCallback(() => {
-        setCurrentPage((p) => Math.min(pages, p + 1));
-    }, [pages]);
+        onPageChange(Math.min(pages, currentPage + 1));
+    }, [pages, currentPage, onPageChange]);
 
     const handleZoomIn = () => setZoom((z) => Math.min(z + 25, 250));
     const handleZoomOut = () => setZoom((z) => Math.max(z - 25, 50));
     const handleZoomReset = () => setZoom(100);
+
+    const handleWheel = useCallback((e: React.WheelEvent) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                setZoom((z) => Math.max(z - 10, 50)); // Scroll up: zoom in? Wait, standard is wheel down (positive delta) is zoom out.
+            } else {
+                setZoom((z) => Math.min(z + 10, 250));
+            }
+        }
+    }, []);
 
     const handleImgLoad = () => {
         setLoading(false);
@@ -108,10 +120,10 @@ function DocumentViewer({ previewUrl, totalPages }: Props) {
                     </button>
                 </div>
             </div>
-            <div className="viewer-content">
+            <div className="viewer-content" onWheel={handleWheel}>
                 {loading && !error && (
                     <div className="viewer-loading">
-                        <div className="spinner" />
+                        <div className="skeleton-page" />
                         <p>Carregando página {currentPage}...</p>
                     </div>
                 )}

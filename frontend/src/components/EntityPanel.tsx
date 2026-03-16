@@ -37,6 +37,7 @@ interface Props {
     entities: SensitiveEntity[];
     selectedIds: Set<number>;
     onToggleEntity: (index: number) => void;
+    onSetEntitiesSelection: (indices: number[], selected: boolean) => void;
     onSelectAll: () => void;
     onDeselectAll: () => void;
     customTerms: string[];
@@ -46,6 +47,7 @@ interface Props {
     isAnonymizing: boolean;
     totalPages: number;
     processingTimeMs: number;
+    onEntityClick: (page: number) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -63,6 +65,8 @@ function EntityPanel({
     isAnonymizing,
     totalPages,
     processingTimeMs,
+    onSetEntitiesSelection,
+    onEntityClick,
 }: Props) {
     const [filter, setFilter] = useState('');
     const [newTerm, setNewTerm] = useState('');
@@ -180,27 +184,49 @@ function EntityPanel({
 
                     return (
                         <div key={tipo} className="entity-type-group">
-                            <button
-                                className="entity-type-header"
-                                onClick={() => toggleType(tipo)}
-                            >
-                                <span className="entity-type-name">
-                                    {typeLabel}
-                                    <span className="entity-type-count">
-                                        {typeSelectedCount}/{items.length}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <button
+                                    className="entity-type-header"
+                                    onClick={() => toggleType(tipo)}
+                                    title={`Expanda para ver os itens de ${typeLabel}`}
+                                    style={{ flex: 1 }}
+                                >
+                                    <span className="entity-type-name">
+                                        {typeLabel}
+                                        <span className="entity-type-count">
+                                            {typeSelectedCount}/{items.length}
+                                        </span>
                                     </span>
-                                </span>
-                                <span className={`entity-chevron ${isExpanded ? 'expanded' : ''}`}>
-                                    ▸
-                                </span>
-                            </button>
+                                    <span className={`entity-chevron ${isExpanded ? 'expanded' : ''}`}>
+                                        ▸
+                                    </span>
+                                </button>
+                                <div style={{ display: 'flex', gap: '4px', paddingRight: '8px' }}>
+                                    <button 
+                                        className="btn-remove" 
+                                        style={{ minWidth: '24px', minHeight: '24px', padding: '0 4px', fontSize: '0.75rem', color: 'var(--color-success)' }}
+                                        onClick={() => onSetEntitiesSelection(items.map((i) => i._index), true)}
+                                        title="Selecionar todos deste tipo"
+                                    >
+                                        ✓
+                                    </button>
+                                    <button 
+                                        className="btn-remove" 
+                                        style={{ minWidth: '24px', minHeight: '24px', padding: '0 4px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}
+                                        onClick={() => onSetEntitiesSelection(items.map((i) => i._index), false)}
+                                        title="Desmarcar todos deste tipo"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
 
                             {isExpanded && (
                                 <div className="entity-type-items">
                                     {items.map((item) => {
                                         const isSelected = selectedIds.has(item._index);
                                         return (
-                                            <label
+                                            <div
                                                 key={item._index}
                                                 className={`entity-item ${isSelected ? 'selected' : 'deselected'}`}
                                             >
@@ -209,12 +235,25 @@ function EntityPanel({
                                                     checked={isSelected}
                                                     onChange={() => onToggleEntity(item._index)}
                                                     className="entity-checkbox"
+                                                    title="Incluir/excluir da anonimização"
                                                 />
-                                                <span className="entity-valor" title={item.valor}>
+                                                <span 
+                                                    className="entity-valor" 
+                                                    title={`Clique para ir à página ${item.pagina}`}
+                                                    onClick={() => onEntityClick(item.pagina)}
+                                                    style={{ cursor: 'pointer', flex: 1 }}
+                                                >
                                                     {item.valor}
                                                 </span>
-                                                <span className="entity-page">p.{item.pagina}</span>
-                                            </label>
+                                                <span 
+                                                    className="entity-page"
+                                                    title={`Clique para ir à página ${item.pagina}`}
+                                                    onClick={() => onEntityClick(item.pagina)}
+                                                    style={{ cursor: 'pointer', paddingLeft: '8px' }}
+                                                >
+                                                    p.{item.pagina}
+                                                </span>
+                                            </div>
                                         );
                                     })}
                                 </div>

@@ -178,6 +178,17 @@ function App() {
         });
     }, []);
 
+    const handleSetEntitiesSelection = useCallback((indices: number[], selected: boolean) => {
+        setSelectedEntityIds((prev) => {
+            const next = new Set(prev);
+            indices.forEach(idx => {
+                if (selected) next.add(idx);
+                else next.delete(idx);
+            });
+            return next;
+        });
+    }, []);
+
     const handleSelectAll = useCallback(() => {
         if (!previewData) return;
         const allIds = new Set(previewData.dados_sensiveis.map((_: unknown, i: number) => i));
@@ -318,6 +329,7 @@ function App() {
                                     entities={previewData.dados_sensiveis}
                                     selectedIds={selectedEntityIds}
                                     onToggleEntity={handleToggleEntity}
+                                    onSetEntitiesSelection={handleSetEntitiesSelection}
                                     onSelectAll={handleSelectAll}
                                     onDeselectAll={handleDeselectAll}
                                     customTerms={customTerms}
