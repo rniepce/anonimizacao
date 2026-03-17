@@ -4,15 +4,21 @@ TJMG Anonymizer Pipeline - FastAPI Application
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.api.routes import router
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# ─── Rate Limiter ─────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
 
 
 @asynccontextmanager
@@ -37,10 +43,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# ─── Rate Limiting ────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ─── CORS (restrito por variável de ambiente) ─────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,6 +63,28 @@ app.add_middleware(
         "X-Anonymization-Mode",
     ],
 )
+
+
+# ─── Security Headers Middleware ──────────────────────────────
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next) -> Response:
+    """Adiciona headers de segurança em todas as respostas (OWASP)."""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'"
+    )
+    return response
+
 
 # Rotas da API
 app.include_router(router, prefix=settings.API_PREFIX)

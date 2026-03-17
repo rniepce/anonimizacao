@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     MAX_FILE_SIZE_MB: int = 200
     ALLOWED_EXTENSIONS: set = {"pdf", "docx"}
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    RATE_LIMIT: str = "10/minute"
     
     class Config:
         env_prefix = "TJMG_"

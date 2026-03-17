@@ -4,10 +4,13 @@ Registra todas as operações de anonimização com hashes
 """
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
+
+# Hora Legal Brasileira (UTC-3) conforme CESEC
+HLB = timezone(timedelta(hours=-3))
 
 from app.config import settings
 
@@ -103,7 +106,7 @@ class AuditLogger:
         """
         entry = AuditEntry(
             job_id=job_id,
-            timestamp=datetime.utcnow().isoformat() + 'Z',
+            timestamp=datetime.now(HLB).isoformat(),
             arquivo_original=arquivo_original.name,
             hash_original=self.calculate_hash(arquivo_original),
             arquivo_anonimizado=arquivo_anonimizado.name,

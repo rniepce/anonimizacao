@@ -171,7 +171,7 @@ function DocumentViewer({
     }
 
     return (
-        <div className="document-viewer">
+        <div className="document-viewer" role="region" aria-label="Visualizador de documento">
             <div className="viewer-toolbar">
                 <div className="viewer-toolbar-left">
                     <button
@@ -179,6 +179,7 @@ function DocumentViewer({
                         onClick={handlePrevPage}
                         disabled={currentPage <= 1}
                         title="Página anterior"
+                        aria-label="Página anterior"
                     >
                         ◀
                     </button>
@@ -190,6 +191,7 @@ function DocumentViewer({
                         onClick={handleNextPage}
                         disabled={currentPage >= pages}
                         title="Próxima página"
+                        aria-label="Próxima página"
                     >
                         ▶
                     </button>
@@ -203,6 +205,7 @@ function DocumentViewer({
                         onClick={handleZoomOut}
                         disabled={zoom <= 75}
                         title="Diminuir zoom"
+                        aria-label="Diminuir zoom"
                     >
                         −
                     </button>
@@ -210,6 +213,7 @@ function DocumentViewer({
                         className="viewer-btn viewer-zoom-label"
                         onClick={handleZoomReset}
                         title="Resetar zoom"
+                        aria-label={`Zoom atual ${zoom}%, clique para resetar`}
                     >
                         {zoom}%
                     </button>
@@ -218,12 +222,13 @@ function DocumentViewer({
                         onClick={handleZoomIn}
                         disabled={zoom >= 200}
                         title="Aumentar zoom"
+                        aria-label="Aumentar zoom"
                     >
                         +
                     </button>
                 </div>
             </div>
-            <div className="viewer-content">
+            <div className="viewer-content" role="document" aria-label={`Conteúdo da página ${currentPage}`}>
                 <div
                     className="viewer-text-content"
                     style={{ fontSize: `${zoom}%` }}

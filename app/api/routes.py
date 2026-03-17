@@ -3,6 +3,8 @@ Rotas da API FastAPI
 """
 import asyncio
 import json
+import os
+import re
 import shutil
 import time
 import uuid
@@ -11,6 +13,8 @@ from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.config import settings
 from app.api.schemas import (
@@ -30,10 +34,30 @@ from app.audit.logger import audit_logger
 
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
+# ─── MIME types permitidos por extensão ───────────────────────
+ALLOWED_MIMES = {
+    "pdf": ["application/pdf"],
+    "docx": [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/zip",  # docx é um zip internamente
+    ],
+}
 
 
-def validate_file(file: UploadFile, content_length: int = 0) -> None:
-    """Valida arquivo enviado"""
+def sanitize_filename(filename: str) -> str:
+    """Remove caracteres perigosos e path traversal do filename."""
+    # Pegar apenas o nome base (remove ../ e diretórios)
+    filename = os.path.basename(filename)
+    # Remover caracteres especiais (manter letras, números, -, _, .)
+    filename = re.sub(r'[^\w\-.]', '_', filename)
+    # Evitar nomes vazios
+    return filename or "upload"
+
+
+def validate_file(file: UploadFile, content_bytes: bytes | None = None, content_length: int = 0) -> None:
+    """Valida arquivo enviado: extensão, tamanho e tipo real (magic bytes)."""
     if not file.filename:
         raise HTTPException(400, "Nome de arquivo não fornecido")
     
@@ -52,8 +76,24 @@ def validate_file(file: UploadFile, content_length: int = 0) -> None:
             f"Arquivo muito grande. Máximo: {settings.MAX_FILE_SIZE_MB}MB"
         )
 
+    # Verificar tipo real do conteúdo via magic bytes
+    if content_bytes:
+        try:
+            import magic
+            detected_mime = magic.from_buffer(content_bytes[:2048], mime=True)
+            allowed = ALLOWED_MIMES.get(ext, [])
+            if detected_mime not in allowed:
+                raise HTTPException(
+                    400,
+                    f"Conteúdo do arquivo não corresponde à extensão .{ext}. "
+                    f"Tipo detectado: {detected_mime}"
+                )
+        except ImportError:
+            pass  # python-magic não disponível, pular verificação
+
 
 @router.post("/analyze", response_model=AnalyzeResponse)
+@limiter.limit(settings.RATE_LIMIT)
 async def analyze_document(
     request: Request,
     file: UploadFile = File(...),
@@ -66,16 +106,17 @@ async def analyze_document(
     Analisa um documento e identifica dados sensíveis.
     Não aplica anonimização, apenas retorna preview.
     """
-    validate_file(file)
+    content = await file.read()
+    validate_file(file, content_bytes=content)
+    safe_name = sanitize_filename(file.filename or "upload")
     start_time = time.time()
     job_id = str(uuid.uuid4())
     
     # Salvar arquivo temporariamente
-    temp_path = settings.UPLOAD_DIR / f"{job_id}_{file.filename}"
+    temp_path = settings.UPLOAD_DIR / f"{job_id}_{safe_name}"
     
     try:
         with open(temp_path, "wb") as f:
-            content = await file.read()
             f.write(content)
         
         # Analisar documento
@@ -113,6 +154,7 @@ async def analyze_document(
 
 
 @router.post("/analyze-preview", response_model=AnalyzePreviewResponse)
+@limiter.limit(settings.RATE_LIMIT)
 async def analyze_preview(
     request: Request,
     file: UploadFile = File(...),
@@ -125,19 +167,20 @@ async def analyze_preview(
     Analisa documento, gera PDF com destaques visuais e retorna
     as entidades identificadas para revisão interativa.
     """
-    validate_file(file)
+    content = await file.read()
+    validate_file(file, content_bytes=content)
+    safe_name = sanitize_filename(file.filename or "upload")
     start_time = time.time()
     job_id = str(uuid.uuid4())
 
     # Salvar arquivo
-    temp_path = settings.UPLOAD_DIR / f"{job_id}_{file.filename}"
+    temp_path = settings.UPLOAD_DIR / f"{job_id}_{safe_name}"
     # Manter o original para anonimização seletiva posterior
-    original_path = settings.UPLOAD_DIR / f"{job_id}_original_{file.filename}"
+    original_path = settings.UPLOAD_DIR / f"{job_id}_original_{safe_name}"
     preview_path = settings.UPLOAD_DIR / f"{job_id}_preview.pdf"
 
     try:
         with open(temp_path, "wb") as f:
-            content = await file.read()
             f.write(content)
 
         # Copiar original (será usado pelo anonymize-selective)
@@ -402,6 +445,7 @@ async def anonymize_selective(
 
 
 @router.post("/anonymize")
+@limiter.limit(settings.RATE_LIMIT)
 async def anonymize_document(
     request: Request,
     file: UploadFile = File(...),
@@ -418,17 +462,18 @@ async def anonymize_document(
     - redact: Aplica tarjas pretas (padrão)
     - pseudonymize: Substitui por dados fake consistentes
     """
-    validate_file(file)
+    file_content = await file.read()
+    validate_file(file, content_bytes=file_content)
+    safe_name = sanitize_filename(file.filename or "upload")
     job_id = str(uuid.uuid4())
     
     # Salvar arquivo
-    input_path = settings.UPLOAD_DIR / f"{job_id}_{file.filename}"
+    input_path = settings.UPLOAD_DIR / f"{job_id}_{safe_name}"
     output_dir = settings.UPLOAD_DIR
     
     try:
         with open(input_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            f.write(file_content)
         
         # Processar documento
         result = pipeline.process(
