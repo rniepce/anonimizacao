@@ -49,8 +49,15 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     MAX_FILE_SIZE_MB: int = 200
     ALLOWED_EXTENSIONS: set = {"pdf", "docx"}
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     RATE_LIMIT: str = "10/minute"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Retorna lista de origens CORS a partir da string separada por vírgula."""
+        if not self.CORS_ORIGINS:
+            return ["*"]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
     
     class Config:
         env_prefix = "TJMG_"

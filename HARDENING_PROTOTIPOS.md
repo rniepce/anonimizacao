@@ -15,15 +15,21 @@ Checklist e código reutilizável para aplicar segurança básica em protótipos
 ### `config.py`
 ```python
 # Adicionar ao Settings:
-CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 RATE_LIMIT: str = "10/minute"
+
+@property
+def cors_origins_list(self) -> list[str]:
+    if not self.CORS_ORIGINS:
+        return ["*"]
+    return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 ```
 
 ### `main.py`
 ```python
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # ← Não mais ["*"]
+    allow_origins=settings.cors_origins_list,  # ← Não mais ["*"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,8 +38,10 @@ app.add_middleware(
 
 ### Railway (variável de ambiente)
 ```
-TJMG_CORS_ORIGINS='["https://meu-app.up.railway.app"]'
+TJMG_CORS_ORIGINS=https://meu-app.up.railway.app
 ```
+
+> **⚠️ Importante**: use string separada por vírgula, **não** JSON. `pydantic-settings` não parseia `list[str]` de env vars corretamente.
 
 ---
 
