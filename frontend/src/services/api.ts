@@ -4,6 +4,7 @@ import type {
     AnalysisResults,
     AnonymizationMeta,
     ConfirmedEntity,
+    CustomTerm,
     ProgressEvent,
 } from '../types';
 
@@ -65,7 +66,7 @@ export async function analyzePreview(file: File, metadata: Metadata): Promise<Pr
 export async function anonymizeSelective(
     jobId: string,
     entities: ConfirmedEntity[],
-    customTerms: string[],
+    customTerms: CustomTerm[],
     mode?: string | null
 ): Promise<{ blob: Blob; meta: AnonymizationMeta }> {
     const body = {

@@ -113,11 +113,17 @@ class SelectiveAnonymizeItem(BaseModel):
     posicao: dict = Field(description="Coordenadas {x, y, width, height}")
 
 
+class CustomTermItem(BaseModel):
+    """Termo customizado com classificação (tipo)"""
+    termo: str
+    tipo: str = "OUTRO"
+
+
 class SelectiveAnonymizeRequest(BaseModel):
     """Request para anonimização seletiva (após revisão do usuário)"""
     job_id: str
     entities: list[SelectiveAnonymizeItem] = Field(description="Entidades confirmadas pelo usuário")
-    custom_terms: list[str] = Field(default=[], description="Termos customizados adicionados pelo usuário")
+    custom_terms: list[CustomTermItem | str] = Field(default=[], description="Termos customizados adicionados pelo usuário")
     mode: Optional[str] = Field(default=None, description="'redact' | 'pseudonymize'")
 
 

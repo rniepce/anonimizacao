@@ -896,17 +896,16 @@ body {
   display: flex;
   gap: var(--spacing-md);
   min-height: 75vh;
+  width: 100%;
 }
 
 /* ============================================
-   Document Viewer
+   Document Sidebar
    ============================================ */
 
-.document-viewer {
-  width: 60%;
-  min-width: 400px;
-  max-width: 80%;
-  resize: horizontal;
+.document-sidebar {
+  width: 250px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--glass-bg);
@@ -916,6 +915,141 @@ body {
   border-radius: var(--radius-xl);
   overflow: hidden;
 }
+
+.sidebar-header {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+}
+
+.sidebar-header h3 {
+  font-size: 1rem;
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.sidebar-item:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--color-accent-light);
+}
+
+.sidebar-item.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--color-text-primary);
+  border-left: 3px solid var(--color-accent);
+}
+
+.sidebar-item-icon {
+  font-size: 1.2rem;
+}
+
+/* ============================================
+   Document Viewer
+   ============================================ */
+
+.document-viewer {
+  flex: 1;
+  min-width: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+/* Custom Classification Popover */
+.viewer-popover {
+  position: absolute;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 200px;
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.viewer-popover-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+}
+
+.viewer-popover-header h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.viewer-popover-close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.viewer-popover-close:hover {
+  color: var(--color-danger);
+}
+
+.viewer-popover-content {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.viewer-popover-word {
+  font-weight: bold;
+  color: var(--color-accent-light);
+  word-break: break-all;
+}
+
+.viewer-popover-select, .viewer-popover-input {
+  width: 100%;
+  padding: var(--spacing-sm);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: white;
+  margin-bottom: var(--spacing-xs);
+}
+
+.viewer-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-xs);
+}
+
 
 .viewer-toolbar {
   display: flex;
@@ -1049,60 +1183,96 @@ body {
 }
 
 .viewer-word.highlighted.type-cpf,
-.viewer-word.highlighted.type-cnpj {
+.viewer-word.custom-selected.type-cpf,
+.viewer-word.highlighted.type-cnpj,
+.viewer-word.custom-selected.type-cnpj {
   background: rgba(239, 68, 68, 0.25);
   color: #fca5a5;
   border-bottom: 2px solid #ef4444;
 }
 
-.viewer-word.highlighted.type-pessoa {
+.viewer-word.highlighted.type-pessoa,
+.viewer-word.custom-selected.type-pessoa {
   background: rgba(99, 102, 241, 0.25);
   color: #a5b4fc;
   border-bottom: 2px solid #6366f1;
 }
 
-.viewer-word.highlighted.type-email {
+.viewer-word.highlighted.type-email,
+.viewer-word.custom-selected.type-email {
   background: rgba(234, 179, 8, 0.25);
   color: #fde047;
   border-bottom: 2px solid #eab308;
 }
 
-.viewer-word.highlighted.type-telefone {
+.viewer-word.highlighted.type-telefone,
+.viewer-word.custom-selected.type-telefone {
   background: rgba(34, 197, 94, 0.25);
   color: #86efac;
   border-bottom: 2px solid #22c55e;
 }
 
-.viewer-word.highlighted.type-endereco {
+.viewer-word.highlighted.type-endereco,
+.viewer-word.custom-selected.type-endereco {
   background: rgba(168, 85, 247, 0.25);
   color: #d8b4fe;
   border-bottom: 2px solid #a855f7;
 }
 
-.viewer-word.highlighted.type-organizacao {
+.viewer-word.highlighted.type-organizacao,
+.viewer-word.custom-selected.type-organizacao {
   background: rgba(249, 115, 22, 0.25);
   color: #fdba74;
   border-bottom: 2px solid #f97316;
 }
 
+.viewer-word.highlighted.type-dinheiro,
+.viewer-word.custom-selected.type-dinheiro {
+  background: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+  border-bottom: 2px solid #10b981;
+}
+
+.viewer-word.highlighted.type-documento,
+.viewer-word.custom-selected.type-documento {
+  background: rgba(6, 182, 212, 0.25);
+  color: #67e8f9;
+  border-bottom: 2px solid #06b6d4;
+}
+
 .viewer-word.highlighted.type-proc_cnj,
+.viewer-word.custom-selected.type-proc_cnj,
 .viewer-word.highlighted.type-oab,
+.viewer-word.custom-selected.type-oab,
 .viewer-word.highlighted.type-rg,
+.viewer-word.custom-selected.type-rg,
 .viewer-word.highlighted.type-cep,
+.viewer-word.custom-selected.type-cep,
 .viewer-word.highlighted.type-cnh,
+.viewer-word.custom-selected.type-cnh,
 .viewer-word.highlighted.type-ctps,
+.viewer-word.custom-selected.type-ctps,
 .viewer-word.highlighted.type-pis_pasep,
+.viewer-word.custom-selected.type-pis_pasep,
 .viewer-word.highlighted.type-titulo_eleitor,
+.viewer-word.custom-selected.type-titulo_eleitor,
 .viewer-word.highlighted.type-conta_bancaria,
+.viewer-word.custom-selected.type-conta_bancaria,
 .viewer-word.highlighted.type-agencia,
-.viewer-word.highlighted.type-data_nascimento {
+.viewer-word.custom-selected.type-agencia,
+.viewer-word.highlighted.type-data_nascimento,
+.viewer-word.custom-selected.type-data_nascimento,
+.viewer-word.highlighted.type-outro,
+.viewer-word.custom-selected.type-outro {
   background: rgba(148, 163, 184, 0.25);
   color: #cbd5e1;
   border-bottom: 2px solid #94a3b8;
 }
 
 .viewer-word.highlighted.type-rosto,
-.viewer-word.highlighted.type-assinatura {
+.viewer-word.custom-selected.type-rosto,
+.viewer-word.highlighted.type-assinatura,
+.viewer-word.custom-selected.type-assinatura {
   background: rgba(236, 72, 153, 0.25);
   color: #f9a8d4;
   border-bottom: 2px solid #ec4899;

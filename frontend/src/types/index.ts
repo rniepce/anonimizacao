@@ -47,6 +47,12 @@ export interface ProgressInfo {
 
 // ─── API Types ───────────────────────────────────────────────
 
+/** Termo customizado para anonimização que se aplica a todo o documento. */
+export interface CustomTerm {
+    termo: string;
+    tipo: string;
+}
+
 /** Entidade confirmada para envio ao endpoint de anonimização. */
 export interface ConfirmedEntity {
     tipo: string;

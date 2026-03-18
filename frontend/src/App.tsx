@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { Metadata, PreviewData, AnonymizationMeta, ProgressInfo } from './types';
+import type { Metadata, PreviewData, AnonymizationMeta, ProgressInfo, CustomTerm } from './types';
 import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
 import UploadSection from './components/UploadSection';
@@ -7,6 +7,7 @@ import MetadataForm from './components/MetadataForm';
 import ProgressSection from './components/ProgressSection';
 import DocumentViewer from './components/DocumentViewer';
 import EntityPanel from './components/EntityPanel';
+import DocumentSidebar from './components/DocumentSidebar';
 import Footer from './components/Footer';
 import { analyzePreview, anonymizeSelective } from './services/api';
 import { Toaster, toast } from 'react-hot-toast';
@@ -34,7 +35,7 @@ function App() {
     // Review state
     const [previewData, setPreviewData] = useState<PreviewData | null>(null);
     const [selectedEntityIds, setSelectedEntityIds] = useState<Set<number>>(new Set());
-    const [customTerms, setCustomTerms] = useState<string[]>([]);
+    const [customTerms, setCustomTerms] = useState<CustomTerm[]>([]);
     const [viewerPage, setViewerPage] = useState(1);
 
     // Download state
@@ -199,12 +200,15 @@ function App() {
         setSelectedEntityIds(new Set());
     }, []);
 
-    const handleAddCustomTerm = useCallback((term: string) => {
-        setCustomTerms((prev) => [...prev, term]);
+    const handleAddCustomTerm = useCallback((term: string, tipo: string = 'OUTRO') => {
+        setCustomTerms((prev) => {
+            if (prev.some(t => t.termo.toLowerCase() === term.toLowerCase())) return prev;
+            return [...prev, { termo: term, tipo }];
+        });
     }, []);
 
     const handleRemoveCustomTerm = useCallback((idx: number) => {
-        setCustomTerms((prev) => prev.filter((_: string, i: number) => i !== idx));
+        setCustomTerms((prev) => prev.filter((_: CustomTerm, i: number) => i !== idx));
     }, []);
 
     const handleDownload = useCallback(() => {
@@ -319,6 +323,11 @@ function App() {
                                 </button>
                             </div>
                             <div className="review-layout">
+                                <DocumentSidebar
+                                    totalPages={previewData.total_paginas}
+                                    currentPage={viewerPage}
+                                    onPageChange={setViewerPage}
+                                />
                                 <DocumentViewer 
                                     textByPage={previewData.texto_por_pagina}
                                     totalPages={previewData.total_paginas} 

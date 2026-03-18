@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import type { SensitiveEntity } from '../types';
+import { useState, useMemo, useCallback, KeyboardEvent } from 'react';
+import type { SensitiveEntity, CustomTerm } from '../types';
 
 // ─── Constants ───────────────────────────────────────────────
 
@@ -40,8 +40,8 @@ interface Props {
     onSetEntitiesSelection: (indices: number[], selected: boolean) => void;
     onSelectAll: () => void;
     onDeselectAll: () => void;
-    customTerms: string[];
-    onAddCustomTerm: (term: string) => void;
+    customTerms: CustomTerm[];
+    onAddCustomTerm: (term: string, tipo?: string) => void;
     onRemoveCustomTerm: (index: number) => void;
     onConfirmAnonymize: () => void;
     isAnonymizing: boolean;
@@ -70,6 +70,7 @@ function EntityPanel({
 }: Props) {
     const [filter, setFilter] = useState('');
     const [newTerm, setNewTerm] = useState('');
+    const [newTermType, setNewTermType] = useState('OUTRO');
     const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
 
     // Group entities by type
@@ -116,14 +117,14 @@ function EntityPanel({
 
     const handleAddTerm = useCallback(() => {
         const trimmed = newTerm.trim();
-        if (trimmed && !customTerms.includes(trimmed)) {
-            onAddCustomTerm(trimmed);
+        if (trimmed && !customTerms.some(t => t.termo.toLowerCase() === trimmed.toLowerCase())) {
+            onAddCustomTerm(trimmed, newTermType);
             setNewTerm('');
         }
-    }, [newTerm, customTerms, onAddCustomTerm]);
+    }, [newTerm, newTermType, customTerms, onAddCustomTerm]);
 
     const handleKeyDown = useCallback(
-        (e: React.KeyboardEvent) => {
+        (e: KeyboardEvent) => {
             if (e.key === 'Enter') {
                 handleAddTerm();
             }
@@ -284,6 +285,20 @@ function EntityPanel({
                         onChange={(e) => setNewTerm(e.target.value)}
                         onKeyDown={handleKeyDown}
                     />
+                    <select 
+                        className="custom-term-input" 
+                        style={{ width: '110px', flex: 'none' }}
+                        value={newTermType}
+                        onChange={e => setNewTermType(e.target.value)}
+                    >
+                        <option value="CPF">CPF</option>
+                        <option value="CNPJ">CNPJ</option>
+                        <option value="PESSOA">Pessoa</option>
+                        <option value="ORGANIZACAO">Organização</option>
+                        <option value="DOCUMENTO">Documento</option>
+                        <option value="DINHEIRO">Dinheiro</option>
+                        <option value="OUTRO">Outro</option>
+                    </select>
                     <button
                         className="custom-term-add-btn"
                         onClick={handleAddTerm}
@@ -297,7 +312,7 @@ function EntityPanel({
                     <div className="custom-terms-list">
                         {customTerms.map((term, idx) => (
                             <span key={idx} className="custom-term-tag">
-                                {term}
+                                {term.termo} <small style={{opacity: 0.7, marginLeft: '4px'}}>({term.tipo})</small>
                                 <button
                                     className="custom-term-remove"
                                     onClick={() => onRemoveCustomTerm(idx)}

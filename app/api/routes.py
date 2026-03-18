@@ -369,10 +369,18 @@ async def anonymize_selective(
             import fitz
             doc = fitz.open(str(input_path))
             for page_num, page in enumerate(doc, start=1):
-                for term in body.custom_terms:
-                    term = term.strip()
+                for term_item in body.custom_terms:
+                    # Support legacy string or new CustomTermItem
+                    if isinstance(term_item, str):
+                        term = term_item.strip()
+                        tipo = "OUTRO"
+                    else:
+                        term = term_item.termo.strip()
+                        tipo = term_item.tipo
+                    
                     if not term:
                         continue
+                        
                     instances = page.search_for(term)
                     for rect in instances:
                         areas.append(RedactionArea(
@@ -381,7 +389,7 @@ async def anonymize_selective(
                             y0=rect.y0,
                             x1=rect.x1,
                             y1=rect.y1,
-                            tipo="OUTRO",
+                            tipo=tipo,
                             valor_original=term
                         ))
             doc.close()

@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
-import type { SensitiveEntity } from '../types';
+import { useState, useCallback, useMemo, MouseEvent } from 'react';
+import type { SensitiveEntity, CustomTerm } from '../types';
 
 interface Props {
     textByPage: Record<string, string>;
@@ -8,8 +8,8 @@ interface Props {
     onPageChange: (page: number) => void;
     entities: SensitiveEntity[];
     selectedEntityIds: Set<number>;
-    customTerms: string[];
-    onWordClick: (word: string) => void;
+    customTerms: CustomTerm[];
+    onWordClick: (word: string, tipo: string) => void;
 }
 
 function DocumentViewer({
@@ -23,6 +23,9 @@ function DocumentViewer({
     onWordClick,
 }: Props) {
     const [zoom, setZoom] = useState(100);
+    const [popover, setPopover] = useState<{ word: string; x: number; y: number } | null>(null);
+    const [selectedType, setSelectedType] = useState('OUTRO');
+    const [customType, setCustomType] = useState('');
     const pages = totalPages || 1;
 
     const handlePrevPage = useCallback(() => {
@@ -53,7 +56,13 @@ function DocumentViewer({
 
     // Build set of custom terms (lowercased)
     const customTermsSet = useMemo(() => {
-        return new Set(customTerms.map((t) => t.toLowerCase()));
+        return new Set(customTerms.map((t) => t.termo.toLowerCase()));
+    }, [customTerms]);
+
+    const customTermsMap = useMemo(() => {
+        const map = new Map<string, string>();
+        customTerms.forEach((t) => map.set(t.termo.toLowerCase(), t.tipo));
+        return map;
     }, [customTerms]);
 
     // Build entity type lookup for color-coding
@@ -131,22 +140,31 @@ function DocumentViewer({
                         }
                         if (isCustom) {
                             className += ' custom-selected';
+                            const customT = customTermsMap.get(wordLower);
+                            if (customT) {
+                                className += ` type-${customT.toLowerCase()}`;
+                                entityType = customT;
+                            }
                         }
 
                         return (
                             <span
                                 key={wordIdx}
                                 className={className}
-                                onClick={() => {
+                                onClick={(e: MouseEvent) => {
                                     if (!isHighlighted && !isCustom && wordLower.length > 1) {
-                                        onWordClick(word.replace(/[.,;:!?()\[\]{}""'']/g, ''));
+                                        setPopover({
+                                            word: word.replace(/[.,;:!?()\[\]{}""'']/g, ''),
+                                            x: e.clientX,
+                                            y: e.clientY
+                                        });
+                                        setSelectedType('OUTRO');
+                                        setCustomType('');
                                     }
                                 }}
                                 title={
-                                    isHighlighted
+                                    isHighlighted || isCustom
                                         ? `🔒 ${entityType}: será anonimizado`
-                                        : isCustom
-                                        ? '✅ Termo customizado selecionado'
                                         : 'Clique para adicionar como termo de anonimização'
                                 }
                             >
@@ -236,6 +254,60 @@ function DocumentViewer({
                     {renderTextContent()}
                 </div>
             </div>
+
+            {/* Classify Popover overlay */}
+            {popover && (
+                <div 
+                    className="viewer-popover"
+                    style={{ position: 'fixed', left: popover.x, top: popover.y + 10 }}
+                >
+                    <div className="viewer-popover-header">
+                        <h4>Classificar</h4>
+                        <button className="viewer-popover-close" onClick={() => setPopover(null)}>×</button>
+                    </div>
+                    <div className="viewer-popover-content">
+                        <span>Termo: </span>
+                        <span className="viewer-popover-word">{popover.word}</span>
+                    </div>
+                    <select 
+                        className="viewer-popover-select"
+                        value={selectedType} 
+                        onChange={e => setSelectedType(e.target.value)}
+                    >
+                        <option value="CPF">CPF</option>
+                        <option value="CNPJ">CNPJ</option>
+                        <option value="PESSOA">Pessoa</option>
+                        <option value="ORGANIZACAO">Organização</option>
+                        <option value="DOCUMENTO">Documento</option>
+                        <option value="DINHEIRO">Dinheiro</option>
+                        <option value="OUTRO">Outro</option>
+                        <option value="CUSTOM">Criar novo...</option>
+                    </select>
+                    {selectedType === 'CUSTOM' && (
+                        <input 
+                            className="viewer-popover-input"
+                            type="text" 
+                            placeholder="Nome do tipo"
+                            value={customType}
+                            onChange={e => setCustomType(e.target.value)}
+                            autoFocus
+                        />
+                    )}
+                    <div className="viewer-popover-actions">
+                        <button 
+                            className="btn btn-primary"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', minHeight: 'auto' }}
+                            onClick={() => {
+                                const finalType = selectedType === 'CUSTOM' ? (customType || 'OUTRO') : selectedType;
+                                onWordClick(popover.word, finalType);
+                                setPopover(null);
+                            }}
+                        >
+                            Confirmar
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
