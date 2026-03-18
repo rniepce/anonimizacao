@@ -46,7 +46,8 @@ O **TJMG Anonymizer** é uma ferramenta de anonimização automática de documen
 | Métrica | Valor |
 |---------|-------|
 | Precisão NER (SpaCy) | ~85% F1 |
-| Precisão NER (BERTimbau) | ~95% F1 |
+| Precisão NER (GLiNER — padrão) | ~91% F1 |
+| Precisão NER (BERTimbau/LeNER-Br) | ~95% F1 |
 | Tempo médio por página | < 2 segundos |
 | Tamanho máximo arquivo | 200 MB |
 | Formatos suportados | PDF, DOCX |
@@ -154,8 +155,9 @@ sequenceDiagram
 | PDF | PyMuPDF | 1.23.8 | Manipulação de PDF |
 | OCR | Tesseract | 0.3.10 | Extração de texto |
 | OCR (Opcional) | PaddleOCR | 2.7.0 | OCR avançado |
-| NLP | SpaCy | 3.7.2 | NER português |
-| NLP (Opcional) | Transformers | 4.36.0 | BERTimbau NER |
+| NLP (fallback) | SpaCy | 3.7.2 | NER português básico |
+| **NLP (padrão)** | **GLiNER** | **≥0.2.0** | **NER zero-shot multilingue, PII-específico** |
+| NLP (produção) | Transformers | 4.36.0 | BERTimbau/LeNER-Br — requer GPU/RAM ≥8GB |
 
 ### 3.2 Frontend
 
@@ -189,9 +191,9 @@ sequenceDiagram
 | **E-mail** | Regex | `[\w.-]+@[\w.-]+\.\w+` |
 | **CEP** | Regex | `\d{5}-\d{3}` |
 | **Data** | Regex | `\d{2}/\d{2}/\d{4}` |
-| **Pessoa** | NER | SpaCy/BERTimbau |
-| **Endereço** | NER | SpaCy/BERTimbau |
-| **Organização** | NER | SpaCy/BERTimbau |
+| **Pessoa** | NER | GLiNER / SpaCy / BERTimbau |
+| **Endereço** | NER | GLiNER / SpaCy / BERTimbau |
+| **Organização** | NER | GLiNER / SpaCy / BERTimbau |
 
 ### 4.2 Análise Contextual Bidirecional
 
@@ -270,17 +272,20 @@ python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
-# 3. Instalar dependências base
+# 3. Instalar dependências base (inclui GLiNER — engine padrão)
 pip install -r requirements.txt
 
-# 4. Baixar modelo SpaCy
+# 4. Baixar modelo SpaCy (fallback)
 python -m spacy download pt_core_news_lg
 
-# 5. (Opcional) Instalar BERTimbau para NER avançado
-pip install -r requirements-transformers.txt
+# O modelo GLiNER (urchade/gliner_multi_pii-v1) é baixado automaticamente
+# na primeira execução via HuggingFace Hub (~450MB)
 
-# 6. (Opcional) Instalar PaddleOCR para OCR avançado
-pip install -r requirements-paddle.txt
+# 5. (Apenas produção com RAM ≥8GB) BERTimbau/LeNER-Br — veja seção 9.5
+# pip install -r requirements-transformers.txt
+
+# 6. (Opcional) PaddleOCR para OCR avançado em scans complexos
+# pip install -r requirements-paddle.txt
 ```
 
 ### 5.4 Configuração via Variáveis de Ambiente
@@ -288,7 +293,9 @@ pip install -r requirements-paddle.txt
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
 | `TJMG_OCR_ENGINE` | `tesseract` | `tesseract` ou `paddle` |
-| `TJMG_NER_ENGINE` | `spacy` | `spacy` ou `transformer` |
+| `TJMG_NER_ENGINE` | `gliner` | `spacy` \| `gliner` \| `gliner_deep` \| `transformer` \| `llm` |
+| `TJMG_GLINER_MODEL` | `urchade/gliner_multi_pii-v1` | Modelo GLiNER standard |
+| `TJMG_GLINER_CONFIDENCE` | `0.5` | Limiar de confiança GLiNER (0–1) |
 | `TJMG_ANONYMIZATION_MODE` | `redact` | `redact` ou `pseudonymize` |
 | `TJMG_MAX_FILE_SIZE_MB` | `200` | Limite de upload em MB |
 | `TJMG_OCR_DPI` | `300` | Resolução para OCR |
@@ -496,7 +503,7 @@ curl http://localhost:8000/api/audit/verify \
 # Dockerfile já incluído no projeto
 docker build -t tjmg-anonymizer .
 docker run -p 8000:8000 \
-  -e TJMG_NER_ENGINE=transformer \
+  -e TJMG_NER_ENGINE=gliner \
   -e TJMG_MAX_FILE_SIZE_MB=200 \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/logs:/app/logs \
@@ -514,7 +521,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - TJMG_NER_ENGINE=spacy
+      - TJMG_NER_ENGINE=gliner          # padrão recomendado
       - TJMG_OCR_ENGINE=tesseract
       - TJMG_ANONYMIZATION_MODE=redact
       - TJMG_MAX_FILE_SIZE_MB=200
@@ -557,9 +564,10 @@ curl http://localhost:8000/health
 | Problema | Causa | Solução |
 |----------|-------|---------|
 | OCR lento | PDF grande | Reduzir DPI ou usar PaddleOCR |
-| Memória alta | BERTimbau carregado | Usar SpaCy ou aumentar RAM |
+| Memória alta | GLiNER em docs enormes | Reduzir `GLINER_CONFIDENCE` ou usar SpaCy |
 | Upload falha | Arquivo > limite | Aumentar `MAX_FILE_SIZE_MB` |
-| NER impreciso | Modelo genérico | Usar `transformer` engine |
+| NER impreciso | Limiar muito alto | Reduzir `TJMG_GLINER_CONFIDENCE` para 0.35 |
+| NER com falsos positivos | Limiar muito baixo | Aumentar `TJMG_GLINER_CONFIDENCE` para 0.65 |
 | Juiz anonimizado | Não está na allowlist | Adicionar à allowlist |
 
 ### 10.2 Logs de Debug
@@ -576,14 +584,17 @@ uvicorn app.main:app --reload
 # Testar OCR
 tesseract --version
 
-# Testar SpaCy
+# Testar SpaCy (fallback)
 python -c "import spacy; nlp = spacy.load('pt_core_news_lg'); print('OK')"
 
-# Testar Transformers (opcional)
-python -c "from transformers import pipeline; print('OK')"
+# Testar GLiNER (engine padrão)
+python -c "from gliner import GLiNER; m = GLiNER.from_pretrained('urchade/gliner_multi_pii-v1'); print('OK')"
+
+# Testar Transformers (somente produção)
+# python -c "from transformers import pipeline; print('OK')"
 
 # Testar PaddleOCR (opcional)
-python -c "from paddleocr import PaddleOCR; print('OK')"
+# python -c "from paddleocr import PaddleOCR; print('OK')"
 ```
 
 ---
@@ -592,10 +603,18 @@ python -c "from paddleocr import PaddleOCR; print('OK')"
 
 ### NER Engines
 
-| Engine | Precisão | Velocidade | RAM | Instalação |
-|--------|----------|------------|-----|------------|
-| SpaCy | ~85% F1 | Rápido | 500MB | Incluído |
-| BERTimbau | ~95% F1 | Médio | 2GB | Opcional (500MB) |
+| Engine | Precisão | Velocidade | RAM | Deploy Railway | Quando usar |
+|--------|----------|------------|-----|----------------|-------------|
+| SpaCy (`pt_core_news_lg`) | ~85% F1 | Rápido | 150MB | ✅ Leve | Fallback / emergência |
+| **GLiNER** (`gliner_multi_pii-v1`) | **~91% F1** | **Médio** | **~700MB** | **✅ Recomendado** | **Padrão — prototipagem e Railway** |
+| GLiNER Deep (`star-pii-gliner-multi`) | ~93% F1 | Lento | ~1.2GB | ⚠️ Pesado | Se GLiNER standard falhar em edge cases |
+| BERTimbau/LeNER-Br | ~95% F1 | Médio | 2GB+ | ❌ Muito pesado (torch ~800MB) | **Produção** com RAM ≥8GB e infraestrutura dedicada |
+| LLM (Ollama local) | ~97% F1 | Lento | 8GB+ | ❌ Inviável | Processamento batch offline / revisão humana |
+
+> **⚠️ Nota sobre BERTimbau/LeNER-Br em produção:**  
+> O modelo `pierreguillou/bert-base-cased-pt-lenerbr` é o melhor para textos jurídicos brasileiros (~95% F1 no LeNER-Br corpus),  
+> mas requer `torch` (~800MB) + modelo (~500MB) + RAM ≥8GB para rodar com conforto.  
+> Para ativar: `pip install -r requirements-transformers.txt` e `TJMG_NER_ENGINE=transformer`.
 
 ### OCR Engines
 

@@ -279,7 +279,7 @@ function App() {
                 )}
 
                 {/* Center Column: Upload, Progress, or Viewer */}
-                <section className="center-workspace flex-1 overflow-y-auto flex flex-col items-center p-8">
+                <section className="center-workspace">
                     {!previewData && !isProcessing && (
                         <div className="upload-view-container w-full max-w-4xl">
                             <header className="upload-header mb-10 text-left">
@@ -313,7 +313,7 @@ function App() {
                     )}
 
                     {previewData && (
-                        <div className="viewer-container w-full max-w-4xl bg-surface-container-lowest shadow-[0_12px_40px_rgba(25,28,29,0.06)] rounded-lg min-h-[1000px] p-16 relative">
+                        <div className="viewer-container w-full max-w-4xl bg-surface-container-lowest shadow-[0_12px_40px_rgba(25,28,29,0.06)] rounded-lg p-16 relative">
                             {/* Document Header */}
                             <div className="mb-12 border-b border-outline-variant border-opacity-20 pb-8">
                                 <div className="flex justify-between items-start">

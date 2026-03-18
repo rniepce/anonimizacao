@@ -29,6 +29,20 @@ function DocumentViewer({
 
     const pageText = textByPage[String(currentPage)] || '';
 
+    const ENTITY_TYPES = [
+        { value: 'CPF', label: 'CPF' },
+        { value: 'CNPJ', label: 'CNPJ' },
+        { value: 'PESSOA', label: 'Pessoa' },
+        { value: 'ORGANIZACAO', label: 'Organização' },
+        { value: 'DOCUMENTO', label: 'Documento' },
+        { value: 'DINHEIRO', label: 'Dinheiro' },
+        { value: 'EMAIL', label: 'E-mail' },
+        { value: 'TELEFONE', label: 'Telefone' },
+        { value: 'ENDERECO', label: 'Endereço' },
+        { value: 'PROC_CNJ', label: 'Proc. CNJ' },
+        { value: 'OUTRO', label: 'Outro' },
+    ];
+
     const highlightedValues = useMemo(() => {
         const set = new Set<string>();
         entities.forEach((entity, idx) => {
@@ -118,17 +132,17 @@ function DocumentViewer({
                                 key={wordIdx}
                                 className={className}
                                 onClick={(e: MouseEvent) => {
-                                    if (!isHighlighted && !isCustom && wordLower.length > 1) {
+                                    if (wordLower.length > 1) {
                                         setPopover({
                                             word: word.replace(/[.,;:!?()\[\]{}""'']/g, ''),
                                             x: e.clientX,
                                             y: e.clientY
                                         });
-                                        setSelectedType('OUTRO');
+                                        setSelectedType(isHighlighted ? entityType : (isCustom ? (customTermsMap.get(wordLower) || 'OUTRO') : 'OUTRO'));
                                         setCustomType('');
                                     }
                                 }}
-                                title={isHighlighted || isCustom ? `🔒 ${entityType}: será anonimizado` : 'Clique para adicionar como termo de anonimização'}
+                                title={isHighlighted || isCustom ? `🔒 ${entityType}: será anonimizado` : 'Clique para classificar e anonimizar'}
                             >
                                 {word}
                             </span>
@@ -163,40 +177,52 @@ function DocumentViewer({
             </div>
 
             {popover && (
-                <div className="viewer-popover" style={{ position: 'fixed', left: Math.min(popover.x, window.innerWidth - 260), top: popover.y + 10 }}>
-                    <div className="viewer-popover-header">
-                        <h4 className="m-0 font-bold">Classificar</h4>
-                        <button className="viewer-popover-close" onClick={() => setPopover(null)}>×</button>
+                <>
+                    <div className="viewer-popover-overlay" onClick={() => setPopover(null)} />
+                    <div className="viewer-popover" style={{ position: 'fixed', left: Math.min(popover.x, window.innerWidth - 300), top: Math.min(popover.y + 10, window.innerHeight - 320) }}>
+                        <div className="viewer-popover-header">
+                            <h4 className="m-0 font-bold">Classificar Termo</h4>
+                            <button className="viewer-popover-close" onClick={() => setPopover(null)}>×</button>
+                        </div>
+                        <div className="viewer-popover-content">
+                            <span>Termo selecionado: </span>
+                            <span className="viewer-popover-word">{popover.word}</span>
+                        </div>
+                        <div className="classification-chips">
+                            {ENTITY_TYPES.map(type => (
+                                <button
+                                    key={type.value}
+                                    className={`classification-chip chip-${type.value.toLowerCase()} ${selectedType === type.value ? 'selected' : ''}`}
+                                    onClick={() => setSelectedType(type.value)}
+                                >
+                                    {type.label}
+                                </button>
+                            ))}
+                            <button
+                                className={`classification-chip chip-outro ${selectedType === 'CUSTOM' ? 'selected' : ''}`}
+                                onClick={() => setSelectedType('CUSTOM')}
+                                style={{ borderStyle: 'dashed' }}
+                            >
+                                + Novo tipo
+                            </button>
+                        </div>
+                        {selectedType === 'CUSTOM' && (
+                            <input className="viewer-popover-input" type="text" placeholder="Nome do tipo personalizado" value={customType} onChange={e => setCustomType(e.target.value)} autoFocus />
+                        )}
+                        <button 
+                            className="btn btn-primary w-full" 
+                            style={{ padding: '0.5rem', fontSize: '0.8rem', marginTop: '0.25rem' }}
+                            onClick={() => {
+                                const finalType = selectedType === 'CUSTOM' ? (customType || 'OUTRO') : selectedType;
+                                onWordClick(popover.word, finalType);
+                                setPopover(null);
+                            }}
+                        >
+                            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>check</span>
+                            Confirmar Classificação
+                        </button>
                     </div>
-                    <div className="viewer-popover-content">
-                        <span>Termo: </span>
-                        <span className="viewer-popover-word">{popover.word}</span>
-                    </div>
-                    <select className="viewer-popover-select" value={selectedType} onChange={e => setSelectedType(e.target.value)}>
-                        <option value="CPF">CPF</option>
-                        <option value="CNPJ">CNPJ</option>
-                        <option value="PESSOA">Pessoa</option>
-                        <option value="ORGANIZACAO">Organização</option>
-                        <option value="DOCUMENTO">Documento</option>
-                        <option value="DINHEIRO">Dinheiro</option>
-                        <option value="OUTRO">Outro</option>
-                        <option value="CUSTOM">Criar novo...</option>
-                    </select>
-                    {selectedType === 'CUSTOM' && (
-                        <input className="viewer-popover-input" type="text" placeholder="Nome do tipo" value={customType} onChange={e => setCustomType(e.target.value)} autoFocus />
-                    )}
-                    <button 
-                        className="btn btn-primary w-full mt-2" 
-                        style={{ padding: '0.4rem', fontSize: '0.8rem' }}
-                        onClick={() => {
-                            const finalType = selectedType === 'CUSTOM' ? (customType || 'OUTRO') : selectedType;
-                            onWordClick(popover.word, finalType);
-                            setPopover(null);
-                        }}
-                    >
-                        Confirmar
-                    </button>
-                </div>
+                </>
             )}
         </div>
     );
