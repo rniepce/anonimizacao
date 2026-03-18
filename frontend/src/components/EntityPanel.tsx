@@ -1,34 +1,6 @@
 import { useState, useMemo, useCallback, KeyboardEvent } from 'react';
 import type { SensitiveEntity, CustomTerm } from '../types';
 
-// ─── Constants ───────────────────────────────────────────────
-
-const TYPE_LABELS: Record<string, string> = {
-    CPF: '🆔 CPF',
-    CNPJ: '🏢 CNPJ',
-    PROC_CNJ: '⚖️ Processo CNJ',
-    OAB: '🔢 OAB',
-    EMAIL: '📧 E-mail',
-    TELEFONE: '📞 Telefone',
-    CEP: '📍 CEP',
-    RG: '🪪 RG',
-    PESSOA: '👤 Pessoa',
-    ENDERECO: '📍 Endereço',
-    ORGANIZACAO: '🏛️ Organização',
-    DATA_NASCIMENTO: '📅 Nascimento',
-    CTPS: '📋 CTPS',
-    PIS_PASEP: '📋 PIS/PASEP',
-    TITULO_ELEITOR: '🗳️ Título Eleitor',
-    CNH: '🚗 CNH',
-    CONTA_BANCARIA: '🏦 Conta',
-    AGENCIA: '🏦 Agência',
-    ROSTO: '😶 Rosto',
-    ASSINATURA: '✍️ Assinatura',
-    OUTRO: '❓ Outro',
-};
-
-// ─── Types ───────────────────────────────────────────────────
-
 interface IndexedEntity extends SensitiveEntity {
     _index: number;
 }
@@ -50,12 +22,11 @@ interface Props {
     onEntityClick: (page: number) => void;
 }
 
-// ─── Component ───────────────────────────────────────────────
-
 function EntityPanel({
     entities,
     selectedIds,
     onToggleEntity,
+    onSetEntitiesSelection,
     onSelectAll,
     onDeselectAll,
     customTerms,
@@ -65,52 +36,44 @@ function EntityPanel({
     isAnonymizing,
     totalPages,
     processingTimeMs,
-    onSetEntitiesSelection,
     onEntityClick,
 }: Props) {
-    const [filter, setFilter] = useState('');
     const [newTerm, setNewTerm] = useState('');
     const [newTermType, setNewTermType] = useState('OUTRO');
-    const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
+    const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(['PESSOA', 'Documentos', 'Processo CNJ'])); // Default expanded
 
-    // Group entities by type
+    // Group entities by simplified categories for the new UI format
     const grouped = useMemo(() => {
-        const groups: Record<string, IndexedEntity[]> = {};
+        const groups: Record<string, IndexedEntity[]> = {
+            'Processo CNJ': [],
+            'Pessoas': [],
+            'Documentos': [],
+            'Contato': [],
+            'Outros': []
+        };
+        
         entities.forEach((entity, index) => {
-            const tipo = entity.tipo;
-            if (!groups[tipo]) groups[tipo] = [];
-            groups[tipo].push({ ...entity, _index: index });
+            const e = { ...entity, _index: index };
+            if (entity.tipo === 'PROC_CNJ') groups['Processo CNJ'].push(e);
+            else if (entity.tipo === 'PESSOA') groups['Pessoas'].push(e);
+            else if (['CPF', 'CNPJ', 'RG', 'OAB'].includes(entity.tipo)) groups['Documentos'].push(e);
+            else if (['EMAIL', 'TELEFONE', 'ENDERECO', 'CEP'].includes(entity.tipo)) groups['Contato'].push(e);
+            else groups['Outros'].push(e);
         });
+
+        // Remove empty groups
+        Object.keys(groups).forEach(key => {
+            if (groups[key].length === 0) delete groups[key];
+        });
+        
         return groups;
     }, [entities]);
-
-    // Filtered entities
-    const filteredGrouped = useMemo(() => {
-        if (!filter.trim()) return grouped;
-        const q = filter.toLowerCase();
-        const result: Record<string, IndexedEntity[]> = {};
-        for (const [tipo, items] of Object.entries(grouped)) {
-            const filtered = items.filter(
-                (item) =>
-                    item.valor.toLowerCase().includes(q) ||
-                    tipo.toLowerCase().includes(q)
-            );
-            if (filtered.length > 0) result[tipo] = filtered;
-        }
-        return result;
-    }, [grouped, filter]);
-
-    const selectedCount = selectedIds.size;
-    const totalCount = entities.length;
 
     const toggleType = useCallback((tipo: string) => {
         setExpandedTypes((prev) => {
             const next = new Set(prev);
-            if (next.has(tipo)) {
-                next.delete(tipo);
-            } else {
-                next.add(tipo);
-            }
+            if (next.has(tipo)) next.delete(tipo);
+            else next.add(tipo);
             return next;
         });
     }, []);
@@ -125,134 +88,73 @@ function EntityPanel({
 
     const handleKeyDown = useCallback(
         (e: KeyboardEvent) => {
-            if (e.key === 'Enter') {
-                handleAddTerm();
-            }
+            if (e.key === 'Enter') handleAddTerm();
         },
         [handleAddTerm]
     );
 
+    const formatEntityValor = (valor: string) => {
+        if (valor.length > 25) return valor.substring(0, 22) + '...';
+        return valor;
+    };
+
     return (
-        <div className="entity-panel">
-            {/* Header with stats */}
-            <div className="entity-panel-header">
-                <h3>🎯 Entidades Identificadas</h3>
-                <div className="entity-stats">
-                    <span className="entity-stat">
-                        <strong>{selectedCount}</strong> / {totalCount} selecionadas
-                    </span>
-                    {totalPages > 0 && (
-                        <span className="entity-stat-secondary">
-                            📄 {totalPages} pág. • ⏱️ {processingTimeMs}ms
-                        </span>
-                    )}
-                </div>
+        <aside className="w-[320px] bg-[#f3f4f5] border-l border-[#edeeef] h-full flex flex-col p-6 overflow-y-auto shrink-0 relative">
+            <h3 className="text-on-surface font-extrabold text-lg mb-4 flex items-center gap-2 m-0">
+                <span className="material-symbols-outlined text-primary">visibility</span>
+                Entidades
+            </h3>
+
+            <div className="flex gap-2 mb-6">
+                <button className="flex-1 bg-white border border-[#c2c6d4] text-xs font-bold py-1.5 rounded-md hover:bg-[#e7e8e9] transition-colors cursor-pointer" onClick={onSelectAll}>Selecionar Tudo</button>
+                <button className="flex-1 bg-white border border-[#c2c6d4] text-xs font-bold py-1.5 rounded-md hover:bg-[#e7e8e9] transition-colors cursor-pointer" onClick={onDeselectAll}>Limpar</button>
             </div>
 
-            {/* Controls */}
-            <div className="entity-controls">
-                <input
-                    type="text"
-                    className="entity-filter"
-                    placeholder="🔍 Filtrar entidades..."
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                />
-                <div className="entity-bulk-actions">
-                    <button
-                        className="entity-bulk-btn"
-                        onClick={onSelectAll}
-                        title="Selecionar todas"
-                    >
-                        ☑ Todas
-                    </button>
-                    <button
-                        className="entity-bulk-btn"
-                        onClick={onDeselectAll}
-                        title="Desselecionar todas"
-                    >
-                        ☐ Nenhuma
-                    </button>
-                </div>
-            </div>
-
-            {/* Entity list by type */}
-            <div className="entity-list">
-                {Object.entries(filteredGrouped).map(([tipo, items]) => {
-                    const isExpanded = expandedTypes.has(tipo) || filter.trim().length > 0;
-                    const typeSelectedCount = items.filter((i) => selectedIds.has(i._index)).length;
-                    const typeLabel = TYPE_LABELS[tipo] || `❓ ${tipo}`;
-
+            <div className="space-y-4 flex-1 pb-24">
+                {Object.entries(grouped).map(([groupName, items]) => {
+                    const isExpanded = expandedTypes.has(groupName);
+                    
                     return (
-                        <div key={tipo} className="entity-type-group">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <button
-                                    className="entity-type-header"
-                                    onClick={() => toggleType(tipo)}
-                                    title={`Expanda para ver os itens de ${typeLabel}`}
-                                    style={{ flex: 1 }}
-                                >
-                                    <span className="entity-type-name">
-                                        {typeLabel}
-                                        <span className="entity-type-count">
-                                            {typeSelectedCount}/{items.length}
-                                        </span>
-                                    </span>
-                                    <span className={`entity-chevron ${isExpanded ? 'expanded' : ''}`}>
-                                        ▸
-                                    </span>
-                                </button>
-                                <div style={{ display: 'flex', gap: '4px', paddingRight: '8px' }}>
-                                    <button 
-                                        className="btn-remove" 
-                                        style={{ minWidth: '24px', minHeight: '24px', padding: '0 4px', fontSize: '0.75rem', color: 'var(--color-success)' }}
-                                        onClick={() => onSetEntitiesSelection(items.map((i) => i._index), true)}
-                                        title="Selecionar todos deste tipo"
-                                    >
-                                        ✓
-                                    </button>
-                                    <button 
-                                        className="btn-remove" 
-                                        style={{ minWidth: '24px', minHeight: '24px', padding: '0 4px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}
-                                        onClick={() => onSetEntitiesSelection(items.map((i) => i._index), false)}
-                                        title="Desmarcar todos deste tipo"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
+                        <div key={groupName} className="group mb-4">
+                            <div 
+                                className="flex justify-between items-center mb-2 cursor-pointer select-none"
+                                onClick={() => toggleType(groupName)}
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                            >
+                                <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">{groupName} ({items.length})</span>
+                                <span className={`material-symbols-outlined text-sm text-on-surface-variant transition-transform ${isExpanded ? 'rotate-180' : ''}`}>expand_more</span>
                             </div>
-
+                            
                             {isExpanded && (
-                                <div className="entity-type-items">
-                                    {items.map((item) => {
+                                <div className="space-y-2 flex flex-col gap-2">
+                                    {items.map(item => {
                                         const isSelected = selectedIds.has(item._index);
                                         return (
-                                            <div
-                                                key={item._index}
-                                                className={`entity-item ${isSelected ? 'selected' : 'deselected'}`}
+                                            <div 
+                                                key={item._index} 
+                                                className={`bg-white p-3 rounded-lg border border-[#e1e3e4] hover:shadow-sm transition-all flex flex-col gap-1 ${!isSelected ? 'opacity-60' : ''}`}
                                             >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isSelected}
-                                                    onChange={() => onToggleEntity(item._index)}
-                                                    className="entity-checkbox"
-                                                    title="Incluir/excluir da anonimização"
-                                                />
+                                                <div className="flex justify-between items-center" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                    <span 
+                                                        className="text-[10px] font-bold text-primary tracking-tighter uppercase cursor-pointer"
+                                                        onClick={() => onEntityClick(item.pagina)}
+                                                        title="Ir para página"
+                                                    >
+                                                        {item.tipo}
+                                                    </span>
+                                                    <button 
+                                                        className={`material-symbols-outlined text-[18px] bg-transparent border-none cursor-pointer hover:scale-110 transition-transform ${isSelected ? 'text-primary' : 'text-error'}`}
+                                                        onClick={() => onToggleEntity(item._index)}
+                                                        title={isSelected ? "Manter anonimizado" : "Ignorar (não será anonimizado)"}
+                                                    >
+                                                        {isSelected ? 'check_circle' : 'cancel'}
+                                                    </button>
+                                                </div>
                                                 <span 
-                                                    className="entity-valor" 
-                                                    title={`Clique para ir à página ${item.pagina}`}
-                                                    onClick={() => onEntityClick(item.pagina)}
-                                                    style={{ cursor: 'pointer', flex: 1 }}
+                                                    className="text-sm font-medium text-on-surface truncate"
+                                                    title={item.valor}
                                                 >
-                                                    {item.valor}
-                                                </span>
-                                                <span 
-                                                    className="entity-page"
-                                                    title={`Clique para ir à página ${item.pagina}`}
-                                                    onClick={() => onEntityClick(item.pagina)}
-                                                    style={{ cursor: 'pointer', paddingLeft: '8px' }}
-                                                >
-                                                    p.{item.pagina}
+                                                    {formatEntityValor(item.valor)}
                                                 </span>
                                             </div>
                                         );
@@ -263,89 +165,82 @@ function EntityPanel({
                     );
                 })}
 
-                {Object.keys(filteredGrouped).length === 0 && (
-                    <div className="entity-empty">
-                        {filter ? 'Nenhuma entidade encontrada para esse filtro.' : 'Nenhuma entidade identificada.'}
+                {/* Custom Terms section mimicking the Accordion Item style */}
+                <div className="group mb-4 mt-6">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Termos Adicionais ({customTerms.length})</span>
                     </div>
-                )}
-            </div>
+                    
+                    <div className="flex gap-2 mb-3">
+                        <input
+                            type="text"
+                            className="flex-1 bg-white border border-[#c2c6d4] rounded-md px-2 py-1 text-xs outline-none focus:border-primary"
+                            placeholder="Adicionar..."
+                            value={newTerm}
+                            onChange={(e) => setNewTerm(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                        />
+                        <button className="bg-[#003f87] hover:bg-[#0056b3] text-white border-none rounded-md px-2 text-xs font-bold cursor-pointer transition-colors" onClick={handleAddTerm}>+</button>
+                    </div>
 
-            {/* Custom terms section */}
-            <div className="custom-terms-section">
-                <h4>➕ Termos Customizados</h4>
-                <p className="custom-terms-desc">
-                    Adicione palavras ou expressões que deseja anonimizar além das detectadas automaticamente.
-                </p>
-                <div className="custom-term-input-row">
-                    <input
-                        type="text"
-                        className="custom-term-input"
-                        placeholder="Digite um termo..."
-                        value={newTerm}
-                        onChange={(e) => setNewTerm(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                    />
-                    <select 
-                        className="custom-term-input" 
-                        style={{ width: '110px', flex: 'none' }}
-                        value={newTermType}
-                        onChange={e => setNewTermType(e.target.value)}
-                    >
-                        <option value="CPF">CPF</option>
-                        <option value="CNPJ">CNPJ</option>
-                        <option value="PESSOA">Pessoa</option>
-                        <option value="ORGANIZACAO">Organização</option>
-                        <option value="DOCUMENTO">Documento</option>
-                        <option value="DINHEIRO">Dinheiro</option>
-                        <option value="OUTRO">Outro</option>
-                    </select>
-                    <button
-                        className="custom-term-add-btn"
-                        onClick={handleAddTerm}
-                        disabled={!newTerm.trim()}
-                    >
-                        +
-                    </button>
+                    {customTerms.length > 0 && (
+                        <div className="space-y-2 flex flex-col gap-2">
+                            {customTerms.map((term, idx) => (
+                                <div key={idx} className="bg-white p-2 rounded-lg border border-[#e1e3e4] flex justify-between items-center">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-primary uppercase">{term.tipo}</span>
+                                        <span className="text-xs font-medium text-on-surface">{formatEntityValor(term.termo)}</span>
+                                    </div>
+                                    <button 
+                                        className="material-symbols-outlined text-[16px] bg-transparent border-none cursor-pointer text-error hover:scale-110 transition-transform"
+                                        onClick={() => onRemoveCustomTerm(idx)}
+                                        title="Remover termo"
+                                    >
+                                        delete
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
-
-                {customTerms.length > 0 && (
-                    <div className="custom-terms-list">
-                        {customTerms.map((term, idx) => (
-                            <span key={idx} className="custom-term-tag">
-                                {term.termo} <small style={{opacity: 0.7, marginLeft: '4px'}}>({term.tipo})</small>
-                                <button
-                                    className="custom-term-remove"
-                                    onClick={() => onRemoveCustomTerm(idx)}
-                                    title="Remover"
-                                >
-                                    ×
-                                </button>
-                            </span>
-                        ))}
-                    </div>
-                )}
             </div>
 
-            {/* Confirm button */}
-            <div className="entity-panel-footer">
+            <div className="mt-8 pt-6 border-t border-[#e1e3e4] mb-4">
+                <div className="bg-[#003f87]/5 rounded-lg p-4 bg-opacity-5">
+                    <h4 className="text-xs font-bold text-[#003f87] mb-3 flex items-center gap-1 m-0">
+                        <span className="material-symbols-outlined text-sm">info</span>
+                        RESUMO DA ANONIMIZAÇÃO
+                    </h4>
+                    <div className="flex justify-between text-xs mb-1" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span className="text-on-surface-variant">Identificadas:</span>
+                        <span className="font-bold">{entities.length + customTerms.length}</span>
+                    </div>
+                    <div className="flex justify-between text-xs mb-3" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                        <span className="text-on-surface-variant">Aprovadas:</span>
+                        <span className="font-bold text-[#003f87]">{selectedIds.size + customTerms.length}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-auto absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#f3f4f5] via-[#f3f4f5] to-transparent pt-12">
                 <button
-                    className="btn btn-primary btn-confirm-anonymize"
+                    className="w-full btn btn-primary py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={onConfirmAnonymize}
-                    disabled={isAnonymizing || (selectedCount === 0 && customTerms.length === 0)}
+                    disabled={isAnonymizing || (selectedIds.size === 0 && customTerms.length === 0)}
                 >
                     {isAnonymizing ? (
                         <>
-                            <span className="spinner-small" /> Anonimizando...
+                            <span className="spinner-small" style={{ borderTopColor: 'currentColor' }} /> Processando...
                         </>
                     ) : (
                         <>
-                            <span className="btn-icon-text">🔒</span>
-                            Confirmar e Anonimizar ({selectedCount + customTerms.length} itens)
+                            <span className="material-symbols-outlined text-[20px]">verified_user</span>
+                            <span className="font-bold">Anonimizar ({selectedIds.size + customTerms.length})</span>
                         </>
                     )}
                 </button>
             </div>
-        </div>
+        </aside>
     );
 }
 
