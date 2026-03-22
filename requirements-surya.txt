@@ -1,0 +1,14 @@
+# Surya OCR — SOTA open source OCR (substitui Tesseract)
+# https://github.com/VikParuchuri/surya
+#
+# Instalação:
+#   pip install -r requirements-surya.txt
+#
+# Depois defina no .env ou variável de ambiente:
+#   TJMG_OCR_ENGINE=surya
+#
+# Requisitos de sistema: nenhum (puro Python/PyTorch)
+# Tamanho dos modelos: ~1.5GB (baixados automaticamente na primeira execução)
+# GPU: opcional (funciona em CPU, mais lento)
+
+surya-ocr>=0.4.0

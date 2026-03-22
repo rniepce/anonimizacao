@@ -67,79 +67,122 @@ class AnonymizationPipeline:
     
     def __init__(self):
         # Inicializar engines baseado nas configurações
-        self._ner_engine = None
+        self._ner_engine = None        # engine primário
+        self._ner_supplementary = None  # engine suplementar (GLiNER sobre o primário)
         self._ocr_engine = None
         self._current_ner_mode = None
         self._init_engines()
     
     def _init_engines(self, ner_mode: Optional[str] = None):
-        """Inicializa os engines de NER e OCR baseado nas configurações."""
-        # NER Engine — resolver modo
+        """
+        Inicializa os engines de NER e OCR baseado nas configurações.
+
+        Arquitetura NER (ordem de prioridade recomendada pelo SOTA):
+          1. Transformer (BERTimbau) — engine primário, maior F1 em entidades definidas
+          2. GLiNER — engine suplementar, captura entidades de cauda longa não cobertas pelo primário
+          3. SpaCy — fallback final, sempre disponível
+
+        Para modos legados (gliner, gliner_deep), o GLiNER age como primário (backward compat).
+        """
         effective_ner = ner_mode or settings.NER_ENGINE
         self._current_ner_mode = effective_ner
         self._ner_engine = None
-        
-        # Tentar LLM (Ollama)
+        self._ner_supplementary = None
+
+        # --- LLM (Ollama) — modo especial, sem suplementar ---
         if effective_ner == 'llm':
             try:
                 from app.core.ner_llm import NERLLMEngine
-                self._ner_engine = NERLLMEngine(
+                engine = NERLLMEngine(
                     model_name=settings.LLM_MODEL,
                     ollama_url=settings.LLM_OLLAMA_URL,
                     timeout=settings.LLM_TIMEOUT,
                     temperature=settings.LLM_TEMPERATURE,
                 )
-                if self._ner_engine.is_available:
-                    logger.info(f"Usando NER com LLM ({settings.LLM_MODEL} via Ollama)")
+                if engine.is_available:
+                    self._ner_engine = engine
+                    logger.info(f"NER primário: LLM ({settings.LLM_MODEL} via Ollama)")
                 else:
-                    logger.warning("Ollama não disponível, tentando fallback")
-                    self._ner_engine = None
+                    logger.warning("Ollama não disponível, usando fallback")
             except Exception as e:
                 logger.warning(f"LLM NER não disponível: {e}")
-        
-        # Tentar GLiNER (standard ou deep)
-        if effective_ner in ('gliner', 'gliner_deep'):
+
+        # --- Transformer (BERTimbau) — primário recomendado ---
+        elif effective_ner == 'transformer':
+            try:
+                from app.core.ner_transformer import NERTransformerEngine
+                engine = NERTransformerEngine(model_name=settings.NER_TRANSFORMER_MODEL)
+                if engine.is_available:
+                    self._ner_engine = engine
+                    logger.info(f"NER primário: BERTimbau ({settings.NER_TRANSFORMER_MODEL})")
+                else:
+                    logger.warning("BERTimbau não disponível, usando fallback")
+            except ImportError:
+                logger.warning("Transformers não instalado — execute: pip install -r requirements-transformers.txt")
+
+            # GLiNER como camada suplementar (se habilitado e primário disponível)
+            if self._ner_engine is not None and settings.NER_GLINER_SUPPLEMENTARY:
+                try:
+                    from app.core.ner_gliner import GLiNEREngine
+                    supp = GLiNEREngine(
+                        mode='standard',
+                        model_name=settings.GLINER_MODEL,
+                        confidence_threshold=settings.GLINER_CONFIDENCE,
+                    )
+                    if supp.is_available:
+                        self._ner_supplementary = supp
+                        logger.info("NER suplementar: GLiNER (captura entidades de cauda longa)")
+                except ImportError:
+                    logger.warning("GLiNER não disponível para camada suplementar")
+
+        # --- GLiNER como primário (modos legados, backward compat) ---
+        elif effective_ner in ('gliner', 'gliner_deep'):
             try:
                 from app.core.ner_gliner import GLiNEREngine
                 mode = 'deep' if effective_ner == 'gliner_deep' else 'standard'
-                model = (
-                    settings.GLINER_DEEP_MODEL if mode == 'deep'
-                    else settings.GLINER_MODEL
-                )
-                self._ner_engine = GLiNEREngine(
+                model = settings.GLINER_DEEP_MODEL if mode == 'deep' else settings.GLINER_MODEL
+                engine = GLiNEREngine(
                     mode=mode,
                     model_name=model,
                     confidence_threshold=settings.GLINER_CONFIDENCE,
                 )
-                if self._ner_engine.is_available:
-                    logger.info(f"Usando NER com GLiNER ({mode})")
+                if engine.is_available:
+                    self._ner_engine = engine
+                    logger.info(f"NER primário: GLiNER ({mode})")
                 else:
-                    logger.warning("GLiNER não disponível, tentando fallback")
-                    self._ner_engine = None
+                    logger.warning("GLiNER não disponível, usando fallback")
             except ImportError:
-                logger.warning("GLiNER não instalado, tentando fallback")
-        
-        # Fallback para Transformer
-        if self._ner_engine is None and effective_ner in ('transformer', 'gliner', 'gliner_deep'):
-            try:
-                from app.core.ner_transformer import NERTransformerEngine
-                self._ner_engine = NERTransformerEngine(
-                    model_name=settings.NER_TRANSFORMER_MODEL
-                )
-                if self._ner_engine.is_available:
-                    logger.info("Usando NER com Transformers (BERTimbau)")
-                else:
-                    self._ner_engine = None
-            except ImportError:
-                logger.warning("Transformers não disponível")
-        
-        # Fallback final para SpaCy
+                logger.warning("GLiNER não instalado")
+
+            # Fallback para Transformer se GLiNER indisponível
+            if self._ner_engine is None:
+                try:
+                    from app.core.ner_transformer import NERTransformerEngine
+                    engine = NERTransformerEngine(model_name=settings.NER_TRANSFORMER_MODEL)
+                    if engine.is_available:
+                        self._ner_engine = engine
+                        logger.info("NER primário: BERTimbau (fallback do GLiNER)")
+                except ImportError:
+                    pass
+
+        # --- SpaCy — fallback final ---
         if self._ner_engine is None:
             self._ner_engine = ner_engine
-            logger.info("Usando NER com SpaCy")
+            logger.info("NER primário: SpaCy (fallback)")
         
-        # OCR Engine
-        if settings.OCR_ENGINE == "paddle":
+        # OCR Engine — prioridade: surya > paddle > tesseract
+        if settings.OCR_ENGINE == "surya":
+            try:
+                from app.core.ocr_surya import SuryaOCREngine
+                self._ocr_engine = SuryaOCREngine()
+                if self._ocr_engine.is_available:
+                    logger.info("Usando OCR com Surya (SOTA)")
+                else:
+                    self._ocr_engine = None
+            except ImportError:
+                logger.warning("surya-ocr não instalado, tentando fallback")
+
+        if self._ocr_engine is None and settings.OCR_ENGINE == "paddle":
             try:
                 from app.core.ocr_paddle import PaddleOCREngine
                 self._ocr_engine = PaddleOCREngine()
@@ -149,7 +192,7 @@ class AnonymizationPipeline:
                     self._ocr_engine = None
             except ImportError:
                 logger.warning("PaddleOCR não disponível, usando Tesseract")
-        
+
         if self._ocr_engine is None:
             self._ocr_engine = ocr_engine
             logger.info("Usando OCR com Tesseract")
@@ -181,7 +224,7 @@ class AnonymizationPipeline:
         
         # Reinicializar NER se modo diferente do atual
         if ner_mode:
-            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
+            ner_mode_map = {'standard': 'transformer', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
             effective_ner = ner_mode_map.get(ner_mode, ner_mode)
             if effective_ner != self._current_ner_mode:
                 self._init_engines(ner_mode=effective_ner)
@@ -323,7 +366,7 @@ class AnonymizationPipeline:
         """
         # Reinicializar NER se modo diferente
         if ner_mode:
-            ner_mode_map = {'standard': 'gliner', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
+            ner_mode_map = {'standard': 'transformer', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
             effective_ner = ner_mode_map.get(ner_mode, ner_mode)
             self._init_engines(ner_mode=effective_ner)
         pdf_info = pdf_handler.get_info(input_path)
@@ -382,7 +425,7 @@ class AnonymizationPipeline:
                 page_height_pixels = int(dimensions[page_idx][1] * settings.OCR_DPI / 72)
                 
                 # Converter coordenadas
-                pdf_x, pdf_y, pdf_w, pdf_h = ocr_engine.pixels_to_pdf_points(
+                pdf_x, pdf_y, pdf_w, pdf_h = self._ocr_engine.pixels_to_pdf_points(
                     box.x, box.y, box.largura, box.altura, page_height_pixels
                 )
                 
@@ -418,68 +461,27 @@ class AnonymizationPipeline:
             # Detecção de rostos
             if settings.DETECT_FACES:
                 try:
-                    from app.core.face_detector import face_detector
-                    
-                    face_detector.confidence_threshold = settings.FACE_CONFIDENCE
-                    faces = face_detector.detect_in_pdf_images(images)
-                    
-                    for face in faces:
-                        page_idx = face.pagina - 1
-                        if page_idx < len(dimensions) and page_idx < len(images):
-                            img_w, img_h = images[page_idx].size
-                            pdf_w, pdf_h = dimensions[page_idx]
-                            
-                            # Converter pixels → PDF points
-                            scale_x = pdf_w / img_w
-                            scale_y = pdf_h / img_h
-                            
-                            x0 = face.x * scale_x
-                            y0 = face.y * scale_y
-                            x1 = (face.x + face.largura) * scale_x
-                            y1 = (face.y + face.altura) * scale_y
-                            
-                            visual_items.append(SensitiveDataItem(
-                                tipo='ROSTO',
-                                valor='[ROSTO DETECTADO]',
-                                pagina=face.pagina,
-                                x0=x0, y0=y0, x1=x1, y1=y1,
-                                confianca=face.confianca,
-                                fonte='face',
-                            ))
+                    faces = self._get_face_detector().detect_in_pdf_images(images)
+                    visual_items.extend(
+                        self._scale_visual_items(faces, images, dimensions, 'ROSTO', 'face')
+                    )
                 except Exception as e:
                     logger.warning(f"Erro na detecção de rostos: {e}")
-            
-            # Detecção de assinaturas
+
+            # Detecção de assinaturas e carimbos
             if settings.DETECT_SIGNATURES:
                 try:
-                    from app.core.signature_detector import signature_detector
-                    
-                    signatures = signature_detector.detect_in_pdf_images(images)
-                    
-                    for sig in signatures:
-                        page_idx = sig.pagina - 1
-                        if page_idx < len(dimensions) and page_idx < len(images):
-                            img_w, img_h = images[page_idx].size
-                            pdf_w, pdf_h = dimensions[page_idx]
-                            
-                            scale_x = pdf_w / img_w
-                            scale_y = pdf_h / img_h
-                            
-                            x0 = sig.x * scale_x
-                            y0 = sig.y * scale_y
-                            x1 = (sig.x + sig.largura) * scale_x
-                            y1 = (sig.y + sig.altura) * scale_y
-                            
-                            visual_items.append(SensitiveDataItem(
-                                tipo='ASSINATURA',
-                                valor='[ASSINATURA DETECTADA]',
-                                pagina=sig.pagina,
-                                x0=x0, y0=y0, x1=x1, y1=y1,
-                                confianca=sig.confianca,
-                                fonte='signature',
-                            ))
+                    sigs = self._get_signature_detector().detect_in_pdf_images(images)
+                    # SignatureYOLOArea tem .tipo; SignatureArea usa 'ASSINATURA' fixo
+                    for sig in sigs:
+                        tipo = getattr(sig, 'tipo', 'ASSINATURA')
+                        visual_items.extend(
+                            self._scale_visual_items(
+                                [sig], images, dimensions, tipo, 'signature'
+                            )
+                        )
                 except Exception as e:
-                    logger.warning(f"Erro na detecção de assinaturas: {e}")
+                    logger.warning(f"Erro na detecção de assinaturas/carimbos: {e}")
         
         except ImportError:
             logger.warning("pdf2image não disponível para detecção visual")
@@ -488,108 +490,231 @@ class AnonymizationPipeline:
         
         return visual_items
     
+    # ------------------------------------------------------------------
+    # Detectores visuais — factory com fallback
+    # ------------------------------------------------------------------
+
+    def _get_face_detector(self):
+        """
+        Retorna o melhor detector de rostos disponível.
+        Prioridade: RetinaFace (InsightFace) → OpenCV DNN
+        """
+        if settings.FACE_DETECTOR == "retina":
+            try:
+                from app.core.face_detector_retina import RetinaFaceDetector
+                det = RetinaFaceDetector(
+                    confidence_threshold=settings.FACE_CONFIDENCE
+                )
+                if det.is_available:
+                    return det
+                logger.info("RetinaFace indisponível — usando OpenCV DNN como fallback")
+            except ImportError:
+                pass
+
+        from app.core.face_detector import FaceDetector
+        det = FaceDetector(confidence_threshold=settings.FACE_CONFIDENCE)
+        return det
+
+    def _get_signature_detector(self):
+        """
+        Retorna o melhor detector de assinaturas/carimbos disponível.
+        Prioridade: YOLOv8 (se modelo configurado) → heurístico por contornos
+        """
+        if settings.SIGNATURE_DETECTOR == "yolo":
+            try:
+                from app.core.signature_detector_yolo import SignatureDetectorYOLO
+                det = SignatureDetectorYOLO(
+                    model_path=settings.SIGNATURE_YOLO_MODEL or None,
+                    confidence_threshold=0.4,
+                )
+                if det.is_available:
+                    return det
+                # is_available=False quando modelo não está configurado — fallback silencioso
+            except ImportError:
+                logger.info("ultralytics não instalado — usando detector por contornos")
+
+        from app.core.signature_detector import signature_detector
+        return signature_detector
+
+    def _scale_visual_items(
+        self,
+        detections: list,
+        images: list,
+        dimensions: list[tuple[float, float]],
+        tipo: str,
+        fonte: str,
+    ) -> list[SensitiveDataItem]:
+        """
+        Converte detecções visuais (coordenadas em pixels) para
+        SensitiveDataItem (coordenadas em PDF points).
+
+        Args:
+            detections: Lista de FaceArea, SignatureArea ou SignatureYOLOArea
+            images: Imagens PIL das páginas
+            dimensions: Dimensões de cada página em PDF points
+            tipo: Tipo para SensitiveDataItem (ex: 'ROSTO', 'ASSINATURA')
+            fonte: Fonte para SensitiveDataItem (ex: 'face', 'signature')
+        """
+        items: list[SensitiveDataItem] = []
+        for det in detections:
+            page_idx = det.pagina - 1
+            if page_idx >= len(dimensions) or page_idx >= len(images):
+                continue
+
+            img_w, img_h = images[page_idx].size
+            pdf_w, pdf_h = dimensions[page_idx]
+
+            scale_x = pdf_w / img_w
+            scale_y = pdf_h / img_h
+
+            items.append(SensitiveDataItem(
+                tipo=tipo,
+                valor=f"[{tipo} DETECTADO]",
+                pagina=det.pagina,
+                x0=det.x * scale_x,
+                y0=det.y * scale_y,
+                x1=(det.x + det.largura) * scale_x,
+                y1=(det.y + det.altura) * scale_y,
+                confianca=det.confianca,
+                fonte=fonte,
+            ))
+        return items
+
     def _identify_sensitive_data(
         self,
         texto: str,
         text_items: list[TextBlock]
     ) -> list[SensitiveDataItem]:
         """
-        Identifica dados sensíveis usando Regex, NER e Contexto Jurídico.
+        Identifica dados sensíveis usando Regex + NER primário + NER suplementar.
+
+        Fluxo:
+          0. Header parsing — nomes de partes identificados no cabeçalho
+          1. Regex — CPF, CNPJ, e-mail, telefone, etc. (precisão ~1.0)
+          2. NER primário (BERTimbau) — nomes, endereços, organizações
+          3. NER suplementar (GLiNER) — entidades não cobertas pelo primário
         """
-        results = []
-        
-        # 0. Análise de Cabeçalho (Header Parsing)
-        # Identifica partes (Autor/Réu) para anonimização agressiva
         from app.core.context_validator import context_validator
+
+        results = []
+
+        # 0. Análise de Cabeçalho — partes processuais (Autor/Réu)
         priority_names = context_validator.analyze_header(texto)
-        
-        # Adicionar nomes do cabeçalho como alvos
         for name in priority_names:
-            # Buscar ocorrências desse nome no texto
             position = self._find_position_for_text(name, text_items)
             if position:
-                # Tentar encontrar todas as ocorrências (simples busca textual aqui)
-                # Na implementação real, seria ideal um search_all nos text_items
                 results.append(SensitiveDataItem(
-                    tipo='PESSOA', # Assumimos pessoa/parte
+                    tipo='PESSOA',
                     valor=name,
                     pagina=position.pagina,
-                    x0=position.x0,
-                    y0=position.y0,
-                    x1=position.x1,
-                    y1=position.y1,
+                    x0=position.x0, y0=position.y0,
+                    x1=position.x1, y1=position.y1,
                     confianca=0.95,
-                    fonte='header_analysis'
+                    fonte='header_analysis',
                 ))
 
-        # 1. Busca por Regex (CPF, CNPJ, OAB, nomes, etc)
-        regex_matches = regex_matcher.find_all(texto)
-        
-        # Normalizar tipos de regex para tipos do sistema
-        TIPO_MAP = {
-            'PESSOA_CONTEXTO': 'PESSOA',
-        }
-        
-        for match in regex_matches:
-            # Se for OAB, verificamos contexto (geralmente publico)
-            if match.tipo == 'OAB':
-                # OAB geralmente não se anonimiza, exceto se solicitado especificamente
-                # Vamos manter como detectado, mas o filtro posterior decide
-                pass 
-            
-            # Normalizar tipo
+        # 1. Regex — dados estruturados (CPF, CNPJ, OAB, e-mail, telefone…)
+        TIPO_MAP = {'PESSOA_CONTEXTO': 'PESSOA'}
+        for match in regex_matcher.find_all(texto):
             tipo_normalizado = TIPO_MAP.get(match.tipo, match.tipo)
-                
             position = self._find_position_for_text(match.valor, text_items)
             if position:
                 results.append(SensitiveDataItem(
                     tipo=tipo_normalizado,
                     valor=match.valor,
                     pagina=position.pagina,
-                    x0=position.x0,
-                    y0=position.y0,
-                    x1=position.x1,
-                    y1=position.y1,
+                    x0=position.x0, y0=position.y0,
+                    x1=position.x1, y1=position.y1,
                     confianca=1.0,
-                    fonte='regex'
+                    fonte='regex',
                 ))
-        
-        # 2. Busca por NER (nomes, endereços)
-        ner_entities = self._ner_engine.extract_entities(texto)
-        
-        for entity in ner_entities:
-            # Validar contexto para Pessoas e Organizações
+
+        # 2. NER primário (BERTimbau / GLiNER / SpaCy)
+        primary_entities = self._ner_engine.extract_entities(texto)
+        results.extend(
+            self._process_ner_entities(primary_entities, texto, text_items, fonte='ner')
+        )
+
+        # 3. NER suplementar (GLiNER) — adiciona apenas o que o primário não cobriu
+        if self._ner_supplementary is not None:
+            supp_entities = self._ner_supplementary.extract_entities(texto)
+
+            # Excluir entidades que sobrepõem spans já detectados pelo primário
+            primary_spans = [(e.inicio, e.fim) for e in primary_entities]
+            non_overlapping = [
+                e for e in supp_entities
+                if not any(
+                    e.inicio < p_fim and e.fim > p_inicio
+                    for (p_inicio, p_fim) in primary_spans
+                )
+            ]
+
+            if non_overlapping:
+                logger.debug(
+                    f"GLiNER suplementar adicionou {len(non_overlapping)} entidades "
+                    f"não cobertas pelo primário"
+                )
+            results.extend(
+                self._process_ner_entities(
+                    non_overlapping, texto, text_items, fonte='ner_gliner'
+                )
+            )
+
+        return self._deduplicate_results(results)
+
+    def _process_ner_entities(
+        self,
+        entities: list,
+        texto: str,
+        text_items: list[TextBlock],
+        fonte: str = 'ner',
+    ) -> list[SensitiveDataItem]:
+        """
+        Aplica validação de contexto jurídico e localização de posição
+        a uma lista de entidades NER (compatível com qualquer engine).
+
+        Args:
+            entities: Lista de entidades (NEREntity, TransformerEntity ou GLiNEREntity)
+            texto: Texto completo do documento
+            text_items: Blocos de texto com posições para localização
+            fonte: Identificador da origem ('ner', 'ner_gliner', etc.)
+
+        Returns:
+            Lista de SensitiveDataItem prontos para redação
+        """
+        from app.core.context_validator import context_validator
+
+        results = []
+        for entity in entities:
+            # Validação de contexto para pessoas e organizações
             if entity.tipo in ('PESSOA', 'ORGANIZACAO', 'ORG', 'PER'):
-                # Usar o validador de contexto
                 decision = context_validator.validate(
                     text=texto,
                     entity_text=entity.texto,
                     start_char=entity.inicio,
                     end_char=entity.fim,
-                    entity_label=entity.tipo
+                    entity_label=entity.tipo,
                 )
-                
                 if not decision.should_anonymize:
-                    continue # Pula se o validador disse para manter visível
-                
-            # Se chegou aqui, é candidato a anonimização
-            if entity.tipo in ('PESSOA', 'ENDERECO', 'ORGANIZACAO'):
-                position = self._find_position_for_text(entity.texto, text_items)
-                if position:
-                    results.append(SensitiveDataItem(
-                        tipo=entity.tipo,
-                        valor=entity.texto,
-                        pagina=position.pagina,
-                        x0=position.x0,
-                        y0=position.y0,
-                        x1=position.x1,
-                        y1=position.y1,
-                        confianca=0.85,
-                        fonte='ner'
-                    ))
-        
-        # Remover duplicatas e sobreposições
-        return self._deduplicate_results(results)
+                    continue
+
+            # Filtrar apenas tipos que o sistema anonimiza via NER
+            if entity.tipo not in ('PESSOA', 'ENDERECO', 'ORGANIZACAO'):
+                continue
+
+            position = self._find_position_for_text(entity.texto, text_items)
+            if position:
+                results.append(SensitiveDataItem(
+                    tipo=entity.tipo,
+                    valor=entity.texto,
+                    pagina=position.pagina,
+                    x0=position.x0, y0=position.y0,
+                    x1=position.x1, y1=position.y1,
+                    confianca=0.85,
+                    fonte=fonte,
+                ))
+
+        return results
 
     def _deduplicate_results(self, results: list[SensitiveDataItem]) -> list[SensitiveDataItem]:
         """Remove duplicatas baseadas em posição e valor"""

@@ -1,0 +1,16 @@
+# Dependências para o pipeline de treinamento (fine-tuning BERTimbau)
+# Instalar com: pip install -r training/requirements.txt
+
+# Core ML
+torch>=2.1.0
+transformers>=4.36.0
+
+# Datasets
+datasets>=2.16.0
+
+# Avaliação NER
+seqeval>=1.2.2
+
+# Já incluídas no requirements.txt principal mas necessárias:
+# numpy>=1.26.0
+# PyMuPDF>=1.23.0

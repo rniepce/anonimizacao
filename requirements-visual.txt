@@ -1,0 +1,19 @@
+# Detecção visual SOTA — assinaturas, carimbos e rostos
+#
+# Instalação:
+#   pip install -r requirements-visual.txt
+#
+# Após instalar, configure no .env:
+#   TJMG_FACE_DETECTOR=retina
+#   TJMG_SIGNATURE_DETECTOR=yolo
+#   TJMG_SIGNATURE_YOLO_MODEL=data/models/signatures.pt  # quando disponível
+
+# RetinaFace — detecção de rostos SOTA (F1 > 0.95 no WIDER FACE)
+# Substitui OpenCV DNN (SSD ResNet-10 de 2017)
+insightface>=0.7.3
+onnxruntime>=1.16.0
+
+# YOLOv8 — detecção de assinaturas e carimbos
+# Requer modelo treinado em TJMG_SIGNATURE_YOLO_MODEL
+# Ver COMO_TREINAR.md para instruções de treinamento
+ultralytics>=8.0.0

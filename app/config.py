@@ -19,12 +19,17 @@ class Settings(BaseSettings):
     OCR_DPI: int = 300
     OCR_LANGUAGE: str = "por"
     OCR_CONFIDENCE_THRESHOLD: int = 60
-    OCR_ENGINE: str = "tesseract"  # 'tesseract' | 'paddle'
+    OCR_ENGINE: str = "surya"  # 'surya' | 'tesseract' | 'paddle'
     
     # NLP / NER
     SPACY_MODEL: str = "pt_core_news_lg"
-    NER_ENGINE: str = "gliner"  # 'spacy' | 'gliner' | 'gliner_deep' | 'transformer' | 'llm'
+    NER_ENGINE: str = "transformer"  # 'transformer' | 'gliner' | 'gliner_deep' | 'spacy' | 'llm'
+    # BERTimbau fine-tuned no LeNER-Br (jurídico brasileiro) — melhor F1 para NER em PT
+    # Alternativa large (maior F1, mais lento): neuralmind/bert-large-portuguese-cased
+    #   (requer fine-tuning adicional no LeNER-Br)
     NER_TRANSFORMER_MODEL: str = "pierreguillou/bert-base-cased-pt-lenerbr"
+    # GLiNER como camada suplementar ao transformer (captura entidades de cauda longa)
+    NER_GLINER_SUPPLEMENTARY: bool = True
     GLINER_MODEL: str = "urchade/gliner_multi_pii-v1"
     GLINER_DEEP_MODEL: str = "Ai4Privacy/star-pii-gliner-multi-v1"
     GLINER_CONFIDENCE: float = 0.5
@@ -39,6 +44,12 @@ class Settings(BaseSettings):
     DETECT_FACES: bool = True
     DETECT_SIGNATURES: bool = True
     FACE_CONFIDENCE: float = 0.5
+    # Detector de rostos: 'retina' (RetinaFace/InsightFace, SOTA) | 'opencv' (legado)
+    FACE_DETECTOR: str = "retina"
+    # Detector de assinaturas/carimbos: 'yolo' | 'contour' (heurístico, legado)
+    SIGNATURE_DETECTOR: str = "yolo"
+    # Caminho para modelo YOLOv8 treinado (.pt). Vazio = usar contour como fallback.
+    SIGNATURE_YOLO_MODEL: str = ""
     
     # Anonimização
     REDACTION_COLOR: tuple = (0, 0, 0)  # Preto
