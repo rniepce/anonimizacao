@@ -47,10 +47,8 @@ RUN pip install --no-cache-dir https://github.com/explosion/spacy-models/release
 COPY . .
 
 # Pré-baixar BERTimbau (NER primário) durante o build
-RUN python -c "
-from transformers import pipeline
-pipeline('ner', model='pierreguillou/bert-base-cased-pt-lenerbr', aggregation_strategy='simple')
-" || echo "Aviso: BERTimbau será baixado na primeira execução"
+RUN python -c "from transformers import pipeline; pipeline('ner', model='pierreguillou/bert-base-cased-pt-lenerbr', aggregation_strategy='simple')" \
+    || echo "Aviso: BERTimbau será baixado na primeira execução"
 
 # Pré-baixar modelo GLiNER durante o build (NER suplementar)
 RUN python -c "from gliner import GLiNER; GLiNER.from_pretrained('urchade/gliner_multi_pii-v1')"
