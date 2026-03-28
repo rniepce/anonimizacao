@@ -48,22 +48,40 @@ async def _cleanup_old_uploads() -> None:
             logger.info(f"🧹 Limpeza de uploads: {removed} arquivo(s) removido(s) (TTL={UPLOAD_TTL_SECONDS}s)")
 
 
+async def _preload_models() -> None:
+    """
+    Pré-carrega modelos NER em background.
+    Executado como asyncio.create_task para não bloquear o startup do uvicorn.
+    O servidor responde ao healthcheck imediatamente enquanto os modelos carregam.
+    """
+    # Pequena espera para o servidor subir completamente
+    await asyncio.sleep(2)
+    try:
+        loop = asyncio.get_event_loop()
+        import functools
+
+        def _load():
+            from app.core.pipeline import pipeline
+            test_text = "João da Silva, CPF 123.456.789-00"
+            pipeline._ner_engine.extract_entities(test_text)
+
+        await loop.run_in_executor(None, _load)
+        logger.info("\u2705 Modelos NER carregados com sucesso (background warm-up)")
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao pré-carregar modelos: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Gerencia o ciclo de vida da aplicação:
-    - Startup: pré-carrega modelos NER, inicia task de limpeza
-    - Shutdown: cancela task de limpeza
+    - Startup: dispara warm-up de modelos e limpeza em background (não bloqueia)
+    - Shutdown: cancela tasks de background
     """
-    logger.info("🚀 Pré-carregando modelos NER...")
-    try:
-        from app.core.pipeline import pipeline
-        # Force NER engine initialization (triggers model download/load)
-        test_text = "João da Silva, CPF 123.456.789-00"
-        pipeline._ner_engine.extract_entities(test_text)
-        logger.info("✅ Modelos NER carregados com sucesso")
-    except Exception as e:
-        logger.warning(f"⚠️ Erro ao pré-carregar modelos: {e}")
+    logger.info("🚀 Servidor iniciando — modelos NER carregando em background...")
+
+    # Iniciar pré-carregamento de modelos em background (não bloqueia o startup)
+    warmup_task = asyncio.create_task(_preload_models())
 
     # Iniciar task de limpeza periódica de uploads
     cleanup_task = asyncio.create_task(_cleanup_old_uploads())
@@ -71,13 +89,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown: cancelar task de limpeza
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-    logger.info("👋 Limpeza encerrada. Aplicação desligada.")
+    # Shutdown: cancelar tasks de background
+    for task in (warmup_task, cleanup_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    logger.info("👋 Aplicação desligada.")
 
 
 app = FastAPI(
