@@ -81,10 +81,10 @@ class Redactor:
                 rect = fitz.Rect(area.x0, area.y0, area.x1, area.y1)
                 
                 # Adicionar anotação de redação (True Redaction)
-                # fill=preto, text=" " para garantir que não haja vazamento visual
+                # text="" garante que não haja vazamento visual em nenhum leitor PDF
                 annot = page.add_redact_annot(
                     rect,
-                    text=" ", 
+                    text="",
                     fill=(0, 0, 0)
                 )
 
@@ -207,8 +207,20 @@ class Redactor:
                 )
                 
                 # Calcular tamanho da fonte baseado na altura do rect
-                font_size = min(12, max(8, (rect.height - 2) * 0.8))
-                
+                font_size = min(12, max(6, (rect.height - 2) * 0.8))
+
+                # Estimar largura do pseudônimo (aprox. 0.55 * font_size por char)
+                estimated_width = len(pseudonimo) * font_size * 0.55
+                available_width = rect.width - 2
+
+                # Ajustar font_size se o texto não couber horizontalmente
+                if estimated_width > available_width and len(pseudonimo) > 0:
+                    font_size = max(6, (available_width / len(pseudonimo)) / 0.55)
+                    # Truncar pseudônimo se ainda não couber em fonte mínima
+                    max_chars = int(available_width / (6 * 0.55))
+                    if max_chars < len(pseudonimo):
+                        pseudonimo = pseudonimo[:max_chars]
+
                 # Inserir texto pseudonimizado
                 page.insert_text(
                     (rect.x0 + 1, rect.y1 - 2),  # Posição ajustada
@@ -395,7 +407,11 @@ class Redactor:
                 )
                 shape.commit()
         
-        doc.save(str(output_path))
+        doc.save(
+            str(output_path),
+            garbage=2,   # Limpeza moderada para PDF de preview
+            deflate=True,
+        )
         doc.close()
     
     def create_comparison_pdf(

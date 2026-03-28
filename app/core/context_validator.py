@@ -109,16 +109,16 @@ class ContextoJuridicoValidator:
             return ContextDecision(False, "Padrão OAB detectado no nome")
             
         # REGRA 3: Análise de Contexto BIDIRECIONAL
-        
-        # 3.1 Contexto ANTERIOR (100 chars antes)
-        window_start = max(0, start_char - 100)
+
+        # 3.1 Contexto ANTERIOR (150 chars antes — linhas jurídicas podem ser longas)
+        window_start = max(0, start_char - 150)
         previous_text = text[window_start:start_char]
-        last_chunk_before = previous_text[-60:]  # Últimos 60 chars
-        
-        # 3.2 Contexto POSTERIOR (100 chars depois)
-        window_end = min(len(text), end_char + 100)
+        last_chunk_before = previous_text[-80:]  # Últimos 80 chars
+
+        # 3.2 Contexto POSTERIOR (150 chars depois)
+        window_end = min(len(text), end_char + 150)
         next_text = text[end_char:window_end]
-        first_chunk_after = next_text[:60]  # Primeiros 60 chars
+        first_chunk_after = next_text[:80]  # Primeiros 80 chars
         
         # ==== VERIFICAR CARGOS PÚBLICOS (NÃO ANONIMIZAR) ====
         
@@ -147,15 +147,22 @@ class ContextoJuridicoValidator:
         # REGRA 4: Safety Net (Padrão)
         if entity_label in ["PESSOA", "PER", "PERSON"]:
             return ContextDecision(True, "Default: Pessoa não identificada como pública")
-            
-        # Verificar entes públicos para ORG
+
+        # Verificar entes públicos para ORG — só exclui se for ente público reconhecido
         if entity_label in ["ORG", "ORGANIZACAO"]:
-            entes_publicos = ["ESTADO", "UNIÃO", "MUNICIPIO", "MINISTÉRIO", "TRIBUNAL", "DEFENSORIA", "POLÍCIA"]
+            entes_publicos = [
+                "ESTADO", "UNIÃO", "MUNICÍPIO", "MUNICIPIO", "MINISTÉRIO", "MINISTERIO",
+                "TRIBUNAL", "DEFENSORIA", "POLÍCIA", "POLICIA", "PREFEITURA",
+                "GOVERNO", "PODER JUDICIÁRIO", "PODER LEGISLATIVO", "CÂMARA", "CAMARA",
+                "ASSEMBLEIA", "SENADO", "CONGRESSO", "RECEITA FEDERAL", "INSS",
+            ]
             upper_name = name_clean.upper()
             if any(ente in upper_name for ente in entes_publicos):
                 return ContextDecision(False, "Ente Público detectado")
-        
-        return ContextDecision(False, "Default: Não anonimizar")
+            # Organização privada (empresa, associação, etc.) → anonimizar
+            return ContextDecision(True, "Default: Organização privada não identificada como pública")
+
+        return ContextDecision(False, "Default: Entidade não mapeada — não anonimizar")
 
     def analyze_header(self, text: str) -> list[str]:
         """

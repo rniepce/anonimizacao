@@ -3,6 +3,7 @@ Pipeline principal de anonimização
 Orquestra todos os componentes do sistema
 """
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -54,7 +55,7 @@ class AnonymizationResult:
 class AnonymizationPipeline:
     """
     Pipeline completo de anonimização de documentos.
-    
+
     Fluxo:
     1. Ingestão: Recebe PDF/DOCX
     2. Triagem: Detecta se é nativo ou imagem
@@ -64,15 +65,18 @@ class AnonymizationPipeline:
     6. Anonimização: Aplica tarjas ou pseudonimização
     7. Auditoria: Registra operação
     """
-    
+
     def __init__(self):
+        # Lock para evitar reinicialização concorrente de engines
+        self._engine_lock = threading.Lock()
+
         # Inicializar engines baseado nas configurações
         self._ner_engine = None        # engine primário
         self._ner_supplementary = None  # engine suplementar (GLiNER sobre o primário)
         self._ocr_engine = None
         self._current_ner_mode = None
         self._init_engines()
-    
+
     def _init_engines(self, ner_mode: Optional[str] = None):
         """
         Inicializa os engines de NER e OCR baseado nas configurações.
@@ -83,6 +87,7 @@ class AnonymizationPipeline:
           3. SpaCy — fallback final, sempre disponível
 
         Para modos legados (gliner, gliner_deep), o GLiNER age como primário (backward compat).
+        Thread-safe via _engine_lock.
         """
         effective_ner = ner_mode or settings.NER_ENGINE
         self._current_ner_mode = effective_ner
@@ -169,7 +174,7 @@ class AnonymizationPipeline:
         if self._ner_engine is None:
             self._ner_engine = ner_engine
             logger.info("NER primário: SpaCy (fallback)")
-        
+
         # OCR Engine — prioridade: surya > paddle > tesseract
         if settings.OCR_ENGINE == "surya":
             try:
@@ -196,7 +201,28 @@ class AnonymizationPipeline:
         if self._ocr_engine is None:
             self._ocr_engine = ocr_engine
             logger.info("Usando OCR com Tesseract")
-    
+
+    def _switch_ner_mode_if_needed(self, ner_mode: Optional[str]) -> None:
+        """
+        Reinicializa engines NER se o modo solicitado diferir do atual.
+        Thread-safe via _engine_lock.
+        Operação potencialmente lenta (carregamento de modelo) — deve ser chamada
+        fora do event loop assíncrono (via run_in_executor na camada de rotas).
+        """
+        if not ner_mode:
+            return
+        ner_mode_map = {
+            'standard': 'transformer',
+            'deep': 'gliner_deep',
+            'legacy': 'spacy',
+            'llm': 'llm',
+        }
+        effective_ner = ner_mode_map.get(ner_mode, ner_mode)
+        with self._engine_lock:
+            if effective_ner != self._current_ner_mode:
+                logger.info(f"Trocando NER engine: {self._current_ner_mode} → {effective_ner}")
+                self._init_engines(ner_mode=effective_ner)
+
     def process(
         self,
         input_path: Path,
@@ -208,40 +234,36 @@ class AnonymizationPipeline:
     ) -> AnonymizationResult:
         """
         Processa um documento completo.
-        
+
         Args:
             input_path: Caminho do arquivo de entrada
             output_dir: Diretório de saída (default: mesmo do input)
             usuario: Usuário executando (para auditoria)
             ip_origem: IP de origem (para auditoria)
             mode: Modo de anonimização ('redact' ou 'pseudonymize')
-            
+
         Returns:
             AnonymizationResult com detalhes do processamento
         """
         start_time = time.time()
         job_id = str(uuid.uuid4())
-        
-        # Reinicializar NER se modo diferente do atual
-        if ner_mode:
-            ner_mode_map = {'standard': 'transformer', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
-            effective_ner = ner_mode_map.get(ner_mode, ner_mode)
-            if effective_ner != self._current_ner_mode:
-                self._init_engines(ner_mode=effective_ner)
-        
+
+        # Reinicializar NER se modo diferente do atual (thread-safe)
+        self._switch_ner_mode_if_needed(ner_mode)
+
         # Definir modo de anonimização
         anonymization_mode = mode or settings.ANONYMIZATION_MODE
-        
+
         # Definir caminho de saída
         if output_dir is None:
             output_dir = input_path.parent
-        
+
         suffix = "_pseudonimizado" if anonymization_mode == "pseudonymize" else "_anonimizado"
         output_path = output_dir / f"{input_path.stem}{suffix}.pdf"
-        
+
         # 1. Obter informações do PDF
         pdf_info = pdf_handler.get_info(input_path)
-        
+
         # 2. Extrair texto com posições
         if pdf_info.tipo == 'nativo':
             text_items = self._extract_native(input_path)
@@ -266,27 +288,27 @@ class AnonymizationPipeline:
                 )
                 text_items = self._extract_native(input_path)
                 texto_completo = '\n'.join(item.texto for item in text_items)
-        
+
         # 3. Identificar dados sensíveis (texto)
         dados_identificados = self._identify_sensitive_data(
             texto_completo, text_items
         )
-        
+
         # 3b. Detecção visual (rostos e assinaturas em scans)
         if pdf_info.tipo == 'imagem':
             visual_areas = self._detect_visual_pii(input_path)
             dados_identificados.extend(visual_areas)
-        
+
         # 4. Filtrar allowlist
         dados_anonimizar = []
         dados_ignorados = []
-        
+
         for item in dados_identificados:
             if item.tipo == 'PESSOA' and allowlist_manager.is_allowed(item.valor):
                 dados_ignorados.append(item)
             else:
                 dados_anonimizar.append(item)
-        
+
         # 5. Aplicar anonimização (redact ou pseudonymize)
         areas = [
             RedactionArea(
@@ -300,7 +322,7 @@ class AnonymizationPipeline:
             )
             for item in dados_anonimizar
         ]
-        
+
         if areas:
             if anonymization_mode == "pseudonymize":
                 stats = redactor.pseudonymize_pdf(input_path, output_path, areas, job_id)
@@ -310,15 +332,15 @@ class AnonymizationPipeline:
             # Se não há nada a anonimizar, apenas copiar e limpar metadados
             pdf_handler.remove_metadata(input_path, output_path)
             stats = {'total_redacoes': 0, 'por_tipo': {}, 'por_pagina': {}}
-        
+
         # 6. Calcular tempo e hashes
         tempo_ms = int((time.time() - start_time) * 1000)
         hash_original = audit_logger.calculate_hash(input_path)
         hash_anonimizado = audit_logger.calculate_hash(output_path)
-        
+
         # 7. Registrar auditoria
         regras_aplicadas = list(set(item.tipo for item in dados_anonimizar))
-        
+
         audit_logger.log_anonymization(
             job_id=job_id,
             arquivo_original=input_path,
@@ -326,14 +348,14 @@ class AnonymizationPipeline:
             total_redacoes=len(dados_anonimizar),
             regras_aplicadas=regras_aplicadas,
             dados_anonimizados=[
-                {'tipo': item.tipo, 'valor': item.valor[:3] + '***'}
+                {'tipo': item.tipo, 'hash': audit_logger.calculate_hash_bytes(item.valor.encode())[:16]}
                 for item in dados_anonimizar
             ],
             tempo_processamento_ms=tempo_ms,
             usuario=usuario,
             ip_origem=ip_origem
         )
-        
+
         return AnonymizationResult(
             job_id=job_id,
             arquivo_original=input_path,
@@ -347,7 +369,7 @@ class AnonymizationPipeline:
             hash_original=hash_original,
             hash_anonimizado=hash_anonimizado
         )
-    
+
     def analyze_only(
         self,
         input_path: Path,
@@ -356,21 +378,19 @@ class AnonymizationPipeline:
         """
         Apenas identifica dados sensíveis sem anonimizar.
         Útil para preview.
-        
+
         Args:
             input_path: Caminho do arquivo
             ner_mode: Override do modo NER ('standard', 'deep', 'legacy')
-            
+
         Returns:
             Lista de dados sensíveis identificados
         """
-        # Reinicializar NER se modo diferente
-        if ner_mode:
-            ner_mode_map = {'standard': 'transformer', 'deep': 'gliner_deep', 'legacy': 'spacy', 'llm': 'llm'}
-            effective_ner = ner_mode_map.get(ner_mode, ner_mode)
-            self._init_engines(ner_mode=effective_ner)
+        # Reinicializar NER se modo diferente (thread-safe)
+        self._switch_ner_mode_if_needed(ner_mode)
+
         pdf_info = pdf_handler.get_info(input_path)
-        
+
         if pdf_info.tipo == 'nativo':
             text_items = self._extract_native(input_path)
             texto_completo = '\n'.join(item.texto for item in text_items)
@@ -394,41 +414,39 @@ class AnonymizationPipeline:
                 )
                 text_items = self._extract_native(input_path)
                 texto_completo = '\n'.join(item.texto for item in text_items)
-        
+
         dados = self._identify_sensitive_data(texto_completo, text_items)
-        
+
         # Detecção visual em scans
         if pdf_info.tipo == 'imagem':
             visual_areas = self._detect_visual_pii(input_path)
             dados.extend(visual_areas)
-        
+
         return dados
-    
+
     def _extract_native(self, pdf_path: Path) -> list[TextBlock]:
         """Extrai texto de PDF nativo com posições"""
         return pdf_handler.extract_words_with_positions(pdf_path)
-    
+
     def _extract_ocr(self, pdf_path: Path) -> list[TextBlock]:
-        """Extrai texto via OCR com posições"""
+        """Extrai texto via OCR com posições, usando confiança real do engine."""
         ocr_results = self._ocr_engine.process_pdf(pdf_path)
-        
+
         # Converter OCRBox para TextBlock
-        # Precisamos das dimensões da página para conversão de coordenadas
         dimensions = pdf_handler.get_page_dimensions(pdf_path)
-        
+
         text_blocks = []
         for box in ocr_results:
             page_idx = box.pagina - 1
             if page_idx < len(dimensions):
                 # Calcular altura da página em pixels
-                # Assumindo DPI padrão do OCR
                 page_height_pixels = int(dimensions[page_idx][1] * settings.OCR_DPI / 72)
-                
+
                 # Converter coordenadas
                 pdf_x, pdf_y, pdf_w, pdf_h = self._ocr_engine.pixels_to_pdf_points(
                     box.x, box.y, box.largura, box.altura, page_height_pixels
                 )
-                
+
                 text_blocks.append(TextBlock(
                     texto=box.texto,
                     pagina=box.pagina,
@@ -437,27 +455,27 @@ class AnonymizationPipeline:
                     x1=pdf_x + pdf_w,
                     y1=pdf_y + pdf_h
                 ))
-        
+
         return text_blocks
-    
+
     def _detect_visual_pii(self, pdf_path: Path) -> list[SensitiveDataItem]:
         """
         Detecta PII visual em documentos escaneados (rostos e assinaturas).
-        
+
         Args:
             pdf_path: Caminho do PDF escaneado
-            
+
         Returns:
             Lista de SensitiveDataItem para áreas visuais detectadas
         """
         visual_items = []
-        
+
         try:
             from pdf2image import convert_from_path
-            
+
             images = convert_from_path(pdf_path, dpi=settings.OCR_DPI)
             dimensions = pdf_handler.get_page_dimensions(pdf_path)
-            
+
             # Detecção de rostos
             if settings.DETECT_FACES:
                 try:
@@ -482,14 +500,14 @@ class AnonymizationPipeline:
                         )
                 except Exception as e:
                     logger.warning(f"Erro na detecção de assinaturas/carimbos: {e}")
-        
+
         except ImportError:
             logger.warning("pdf2image não disponível para detecção visual")
         except Exception as e:
             logger.warning(f"Erro na detecção visual: {e}")
-        
+
         return visual_items
-    
+
     # ------------------------------------------------------------------
     # Detectores visuais — factory com fallback
     # ------------------------------------------------------------------
@@ -547,13 +565,6 @@ class AnonymizationPipeline:
         """
         Converte detecções visuais (coordenadas em pixels) para
         SensitiveDataItem (coordenadas em PDF points).
-
-        Args:
-            detections: Lista de FaceArea, SignatureArea ou SignatureYOLOArea
-            images: Imagens PIL das páginas
-            dimensions: Dimensões de cada página em PDF points
-            tipo: Tipo para SensitiveDataItem (ex: 'ROSTO', 'ASSINATURA')
-            fonte: Fonte para SensitiveDataItem (ex: 'face', 'signature')
         """
         items: list[SensitiveDataItem] = []
         for det in detections:
@@ -601,8 +612,8 @@ class AnonymizationPipeline:
         # 0. Análise de Cabeçalho — partes processuais (Autor/Réu)
         priority_names = context_validator.analyze_header(texto)
         for name in priority_names:
-            position = self._find_position_for_text(name, text_items)
-            if position:
+            positions = self._find_positions_for_text(name, text_items)
+            for position in positions:
                 results.append(SensitiveDataItem(
                     tipo='PESSOA',
                     valor=name,
@@ -617,8 +628,8 @@ class AnonymizationPipeline:
         TIPO_MAP = {'PESSOA_CONTEXTO': 'PESSOA'}
         for match in regex_matcher.find_all(texto):
             tipo_normalizado = TIPO_MAP.get(match.tipo, match.tipo)
-            position = self._find_position_for_text(match.valor, text_items)
-            if position:
+            positions = self._find_positions_for_text(match.valor, text_items)
+            for position in positions:
                 results.append(SensitiveDataItem(
                     tipo=tipo_normalizado,
                     valor=match.valor,
@@ -672,15 +683,6 @@ class AnonymizationPipeline:
         """
         Aplica validação de contexto jurídico e localização de posição
         a uma lista de entidades NER (compatível com qualquer engine).
-
-        Args:
-            entities: Lista de entidades (NEREntity, TransformerEntity ou GLiNEREntity)
-            texto: Texto completo do documento
-            text_items: Blocos de texto com posições para localização
-            fonte: Identificador da origem ('ner', 'ner_gliner', etc.)
-
-        Returns:
-            Lista de SensitiveDataItem prontos para redação
         """
         from app.core.context_validator import context_validator
 
@@ -702,8 +704,8 @@ class AnonymizationPipeline:
             if entity.tipo not in ('PESSOA', 'ENDERECO', 'ORGANIZACAO'):
                 continue
 
-            position = self._find_position_for_text(entity.texto, text_items)
-            if position:
+            positions = self._find_positions_for_text(entity.texto, text_items)
+            for position in positions:
                 results.append(SensitiveDataItem(
                     tipo=entity.tipo,
                     valor=entity.texto,
@@ -723,52 +725,110 @@ class AnonymizationPipeline:
         for item in results:
             # Chave única aproximada (valor + pagina + coordenadas arredondadas)
             key = (
-                item.valor.lower(), 
-                item.pagina, 
-                round(item.x0), 
+                item.valor.lower(),
+                item.pagina,
+                round(item.x0),
                 round(item.y0)
             )
             if key not in seen:
                 seen.add(key)
                 unique.append(item)
         return unique
-    
-    def _find_position_for_text(
+
+    def _find_positions_for_text(
         self,
         search_text: str,
-        text_items: list[TextBlock]
-    ) -> Optional[TextBlock]:
+        text_items: list[TextBlock],
+    ) -> list[TextBlock]:
         """
-        Encontra a posição de um texto nos itens extraídos.
-        
+        Encontra todos os blocos de texto que constituem a entidade buscada.
+
+        Para entidades multi-palavra (ex: 'João da Silva'), retorna múltiplos
+        blocos se necessário, garantindo cobertura completa da tarja.
+
         Args:
-            search_text: Texto a buscar
-            text_items: Itens de texto com posições
-            
+            search_text: Texto a buscar (pode ser multi-palavra)
+            text_items: Itens de texto com posições (palavras individuais)
+
         Returns:
-            TextBlock com a posição, ou None se não encontrado
+            Lista de TextBlock cobrindo toda a entidade, ou [] se não encontrado
         """
         search_lower = search_text.lower().strip()
-        
-        # Busca exata
+        if not search_lower:
+            return []
+
+        # 1. Busca exata num único bloco
         for item in text_items:
             if item.texto.lower().strip() == search_lower:
-                return item
-        
-        # Busca parcial (texto contido)
+                return [item]
+
+        # 2. Busca por contenção num único bloco (ex: bloco = "CPF: 123.456.789-00")
         for item in text_items:
             if search_lower in item.texto.lower():
-                return item
-        
-        # Busca por partes (para textos quebrados em múltiplos blocos)
+                return [item]
+
+        # 3. Entidade multi-palavra: buscar sequência de blocos consecutivos
         words = search_text.split()
         if len(words) > 1:
-            first_word = words[0].lower()
-            for item in text_items:
-                if item.texto.lower().startswith(first_word):
-                    return item
-        
-        return None
+            positions = self._find_multiword_positions(words, text_items)
+            if positions:
+                return positions
+
+        # 4. Fallback: bloco que começa com a primeira palavra da entidade
+        first_word = words[0].lower() if words else search_lower
+        for item in text_items:
+            block_lower = item.texto.lower().strip()
+            if block_lower == first_word or block_lower.startswith(first_word + ' '):
+                return [item]
+
+        return []
+
+    def _find_multiword_positions(
+        self,
+        words: list[str],
+        text_items: list[TextBlock],
+    ) -> list[TextBlock]:
+        """
+        Busca uma sequência de palavras em blocos consecutivos de texto
+        na mesma página, em ordem de leitura (linha por linha, esquerda a direita).
+
+        Retorna a lista de blocos que formam a sequência completa.
+        """
+        # Agrupar por página
+        by_page: dict[int, list[TextBlock]] = {}
+        for item in text_items:
+            by_page.setdefault(item.pagina, []).append(item)
+
+        words_lower = [w.lower() for w in words]
+
+        for page_items in by_page.values():
+            # Ordenar em ordem de leitura: linha (y0 arredondada) depois x0
+            sorted_items = sorted(page_items, key=lambda b: (round(b.y0 / 5) * 5, b.x0))
+
+            n = len(sorted_items)
+            w_len = len(words_lower)
+
+            for i in range(n - w_len + 1):
+                matched = []
+                w_idx = 0
+                j = i
+
+                while j < n and w_idx < w_len:
+                    block_text = sorted_items[j].texto.lower().strip()
+                    target_word = words_lower[w_idx]
+
+                    if block_text == target_word:
+                        matched.append(sorted_items[j])
+                        w_idx += 1
+                    elif w_idx > 0:
+                        # Sequência quebrada — reiniciar
+                        break
+                    j += 1
+
+                if w_idx == w_len and matched:
+                    return matched
+
+        return []
 
 
 # Singleton para uso global

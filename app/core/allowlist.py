@@ -84,24 +84,35 @@ class AllowlistManager:
     def is_allowed(self, nome: str) -> bool:
         """
         Verifica se um nome está na lista branca.
-        
+        Usa matching exato ou de palavras completas (word-boundary), evitando
+        que "Silva" na allowlist proteja qualquer sobrenome Silva.
+
         Args:
             nome: Nome a verificar
-            
+
         Returns:
             True se está na lista branca (não deve ser anonimizado)
         """
         nome_normalizado = self._normalize_name(nome)
-        
-        # Busca exata
+
+        # 1. Busca exata
         if nome_normalizado in self._names_set:
             return True
-        
-        # Busca parcial (nome contido em algum item)
-        for nome_lista in self._names_set:
-            if nome_normalizado in nome_lista or nome_lista in nome_normalizado:
-                return True
-        
+
+        # 2. Verifica se o nome buscado é sub-conjunto de palavras de um item da lista
+        #    (ou vice-versa), só quando AMBOS têm pelo menos 2 palavras.
+        #    Ex: "João Silva" matches "Drª João Silva de Lima"
+        nome_palavras = set(nome_normalizado.split())
+        if len(nome_palavras) >= 2:
+            for nome_lista in self._names_set:
+                lista_palavras = set(nome_lista.split())
+                if len(lista_palavras) >= 2:
+                    # Intersección de palavras ≥ min das duas listas
+                    inter = nome_palavras & lista_palavras
+                    threshold = min(len(nome_palavras), len(lista_palavras))
+                    if len(inter) >= threshold:
+                        return True
+
         return False
     
     def get_match(self, nome: str) -> Optional[AllowlistItem]:
@@ -128,20 +139,29 @@ class AllowlistManager:
     
     def add_item(self, item: AllowlistItem) -> None:
         """
-        Adiciona item à lista branca.
-        
+        Adiciona item à lista branca, verificando duplicatas.
+
         Args:
             item: Item a adicionar
         """
         tipo = item.tipo.lower()
         if tipo not in self._cache:
             self._cache[tipo] = []
-        
+
+        # Verificar duplicata (mesmo nome, case-insensitive)
+        nome_normalizado = self._normalize_name(item.nome)
+        existente = any(
+            self._normalize_name(i.nome) == nome_normalizado
+            for i in self._cache.get(tipo, [])
+        )
+        if existente:
+            return  # Já existe, não duplicar
+
         self._cache[tipo].append(item)
-        
+
         if item.ativo:
-            self._names_set.add(self._normalize_name(item.nome))
-        
+            self._names_set.add(nome_normalizado)
+
         # Persistir
         file_map = {
             'juiz': self.juizes_file,
@@ -149,7 +169,7 @@ class AllowlistManager:
             'advogado': self.advogados_file,
             'servidor': self.servidores_file,
         }
-        
+
         if tipo in file_map:
             self._save_file(file_map[tipo], self._cache[tipo])
     

@@ -141,29 +141,43 @@ class RegexMatcher:
     def find_all(self, texto: str) -> list[RegexMatch]:
         """
         Encontra todos os dados sensíveis no texto.
-        
+
+        Para CPF e CNPJ, valida os dígitos verificadores
+        para eliminar falsos positivos.
+
         Args:
             texto: Texto para analisar
-            
+
         Returns:
             Lista de matches encontrados
         """
         matches = []
-        
+
         for tipo, pattern in self.patterns.items():
             for match in pattern.finditer(texto):
                 # Para padrões com grupos, pega o grupo capturado
                 valor = match.group(1) if match.lastindex else match.group(0)
+
+                # Validação de dígitos verificadores para CPF e CNPJ
+                if tipo == 'CPF':
+                    cpf_digits = re.sub(r'\D', '', valor)
+                    if not self.validate_cpf(cpf_digits):
+                        continue
+                elif tipo == 'CNPJ':
+                    cnpj_digits = re.sub(r'\D', '', valor)
+                    if not self.validate_cnpj(cnpj_digits):
+                        continue
+
                 matches.append(RegexMatch(
                     tipo=tipo,
                     valor=valor,
                     inicio=match.start(),
                     fim=match.end()
                 ))
-        
+
         # Ordenar por posição no texto
         matches.sort(key=lambda m: m.inicio)
-        
+
         return matches
     
     def find_by_type(self, texto: str, tipo: str) -> list[RegexMatch]:

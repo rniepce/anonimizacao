@@ -3,6 +3,7 @@ Rotas da API FastAPI
 """
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -32,6 +33,7 @@ from app.core.allowlist import allowlist_manager, AllowlistItem
 from app.core.progress import progress_manager
 from app.audit.logger import audit_logger
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -60,14 +62,14 @@ def validate_file(file: UploadFile, content_bytes: bytes | None = None, content_
     """Valida arquivo enviado: extensão, tamanho e tipo real (magic bytes)."""
     if not file.filename:
         raise HTTPException(400, "Nome de arquivo não fornecido")
-    
+
     ext = file.filename.split('.')[-1].lower()
     if ext not in settings.ALLOWED_EXTENSIONS:
         raise HTTPException(
             400,
             f"Extensão não permitida. Use: {settings.ALLOWED_EXTENSIONS}"
         )
-    
+
     # Verificar tamanho do arquivo
     max_size = settings.MAX_FILE_SIZE_MB * 1024 * 1024
     if content_length > max_size:
@@ -92,6 +94,32 @@ def validate_file(file: UploadFile, content_bytes: bytes | None = None, content_
             pass  # python-magic não disponível, pular verificação
 
 
+def _cleanup_job_files(job_id: str, *extra_paths: Path) -> None:
+    """Remove arquivos temporários de um job do diretório de uploads."""
+    for f in settings.UPLOAD_DIR.glob(f"{job_id}_*"):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+    for p in extra_paths:
+        if p and p.exists():
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+
+# ─── Execução bloqueante em thread pool ───────────────────────
+async def _run_pipeline_in_executor(fn, *args, **kwargs):
+    """
+    Executa funções bloqueantes do pipeline em thread pool,
+    evitando bloquear o event loop assíncrono da FastAPI.
+    """
+    loop = asyncio.get_event_loop()
+    import functools
+    return await loop.run_in_executor(None, functools.partial(fn, **kwargs) if kwargs else fn, *args)
+
+
 @router.post("/analyze", response_model=AnalyzeResponse)
 @limiter.limit(settings.RATE_LIMIT)
 async def analyze_document(
@@ -111,22 +139,21 @@ async def analyze_document(
     safe_name = sanitize_filename(file.filename or "upload")
     start_time = time.time()
     job_id = str(uuid.uuid4())
-    
+
     # Salvar arquivo temporariamente
     temp_path = settings.UPLOAD_DIR / f"{job_id}_{safe_name}"
-    
+
     try:
         with open(temp_path, "wb") as f:
             f.write(content)
-        
-        # Analisar documento
+
+        # Analisar documento (bloqueante → thread pool)
         from app.core.pdf_handler import pdf_handler
-        pdf_info = pdf_handler.get_info(temp_path)
-        
-        dados = pipeline.analyze_only(temp_path, ner_mode=ner_mode)
-        
+        pdf_info = await _run_pipeline_in_executor(pdf_handler.get_info, temp_path)
+        dados = await _run_pipeline_in_executor(pipeline.analyze_only, temp_path, ner_mode)
+
         tempo_ms = int((time.time() - start_time) * 1000)
-        
+
         return AnalyzeResponse(
             job_id=job_id,
             arquivo=file.filename,
@@ -146,11 +173,15 @@ async def analyze_document(
             total_identificados=len(dados),
             tempo_processamento_ms=tempo_ms
         )
-    
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao analisar documento job={job_id}: {type(e).__name__}: {e}")
+        raise HTTPException(500, f"Erro ao analisar documento: {type(e).__name__}")
     finally:
         # Limpar arquivo temporário
-        if temp_path.exists():
-            temp_path.unlink()
+        _cleanup_job_files(job_id, temp_path)
 
 
 @router.post("/analyze-preview", response_model=AnalyzePreviewResponse)
@@ -188,10 +219,10 @@ async def analyze_preview(
 
         # Obter info do PDF
         from app.core.pdf_handler import pdf_handler
-        pdf_info = pdf_handler.get_info(temp_path)
+        pdf_info = await _run_pipeline_in_executor(pdf_handler.get_info, temp_path)
 
-        # Analisar documento
-        dados = pipeline.analyze_only(temp_path, ner_mode=ner_mode)
+        # Analisar documento (bloqueante → thread pool)
+        dados = await _run_pipeline_in_executor(pipeline.analyze_only, temp_path, ner_mode)
 
         # Extrair texto por página para o visualizador interativo
         import fitz as fitz_lib
@@ -220,7 +251,7 @@ async def analyze_preview(
         ]
 
         if areas:
-            redactor.add_overlay_boxes(temp_path, preview_path, areas)
+            await _run_pipeline_in_executor(redactor.add_overlay_boxes, temp_path, preview_path, areas)
         else:
             shutil.copy2(temp_path, preview_path)
 
@@ -248,18 +279,18 @@ async def analyze_preview(
             texto_por_pagina=texto_por_pagina,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        # Limpar arquivos em caso de erro
-        for p in [temp_path, original_path, preview_path]:
+        logger.error(f"Erro ao analisar preview job={job_id}: {type(e).__name__}: {e}")
+        # Limpar arquivos em caso de erro (exceto original — pode ter sido salvo)
+        for p in [temp_path, preview_path]:
             if p.exists():
                 p.unlink()
-        detail = str(e) if str(e) else type(e).__name__
-        raise HTTPException(500, f"Erro ao analisar documento: {detail}")
+        raise HTTPException(500, f"Erro ao analisar documento: {type(e).__name__}")
 
     finally:
-        # Limpar apenas o temp, manter original e preview
+        # Limpar apenas o temp, manter original e preview para uso posterior
         if temp_path.exists():
             temp_path.unlink()
 
@@ -306,6 +337,7 @@ async def get_preview_page(job_id: str, page_num: int):
         # Renderizar em resolução adequada (2x = 144 DPI)
         mat = fitz.Matrix(2.0, 2.0)
         pix = page.get_pixmap(matrix=mat)
+        total_pages = len(doc)
 
         img_bytes = pix.tobytes("png")
         doc.close()
@@ -316,17 +348,19 @@ async def get_preview_page(job_id: str, page_num: int):
             headers={
                 "Cache-Control": "public, max-age=3600",
                 "X-Page-Number": str(page_num),
-                "X-Total-Pages": str(len(doc) if not doc.is_closed else page_num),
+                "X-Total-Pages": str(total_pages),
             }
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Erro ao renderizar página: {str(e)}")
+        logger.error(f"Erro ao renderizar página job={job_id} page={page_num}: {e}")
+        raise HTTPException(500, f"Erro ao renderizar página: {type(e).__name__}")
 
 
 @router.post("/anonymize-selective")
+@limiter.limit(settings.RATE_LIMIT)  # FIX: endpoint antes sem rate limit
 async def anonymize_selective(
     request: Request,
     body: SelectiveAnonymizeRequest,
@@ -377,10 +411,10 @@ async def anonymize_selective(
                     else:
                         term = term_item.termo.strip()
                         tipo = term_item.tipo
-                    
+
                     if not term:
                         continue
-                        
+
                     instances = page.search_for(term)
                     for rect in instances:
                         areas.append(RedactionArea(
@@ -394,16 +428,15 @@ async def anonymize_selective(
                         ))
             doc.close()
 
-        # Aplicar anonimização
+        # Aplicar anonimização (bloqueante → thread pool)
         if areas:
             if mode == "pseudonymize":
-                stats = redactor.pseudonymize_pdf(input_path, output_path, areas, job_id)
+                await _run_pipeline_in_executor(redactor.pseudonymize_pdf, input_path, output_path, areas, job_id)
             else:
-                stats = redactor.redact_pdf(input_path, output_path, areas)
+                await _run_pipeline_in_executor(redactor.redact_pdf, input_path, output_path, areas)
         else:
             from app.core.pdf_handler import pdf_handler
-            pdf_handler.remove_metadata(input_path, output_path)
-            stats = {'total_redacoes': 0, 'por_tipo': {}, 'por_pagina': {}}
+            await _run_pipeline_in_executor(pdf_handler.remove_metadata, input_path, output_path)
 
         # Calcular hashes
         hash_original = audit_logger.calculate_hash(input_path)
@@ -421,7 +454,7 @@ async def anonymize_selective(
             total_redacoes=len(areas),
             regras_aplicadas=regras_aplicadas,
             dados_anonimizados=[
-                {'tipo': a.tipo, 'valor': a.valor_original[:3] + '***'}
+                {'tipo': a.tipo, 'hash': audit_logger.calculate_hash_bytes(a.valor_original.encode())[:16]}
                 for a in areas
             ],
             tempo_processamento_ms=0,
@@ -446,10 +479,8 @@ async def anonymize_selective(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        detail = str(e) if str(e) else type(e).__name__
-        raise HTTPException(500, f"Erro ao anonimizar documento: {detail}")
+        logger.error(f"Erro ao anonimizar seletivo job={job_id}: {type(e).__name__}: {e}")
+        raise HTTPException(500, f"Erro ao anonimizar documento: {type(e).__name__}")
 
 
 @router.post("/anonymize")
@@ -465,7 +496,7 @@ async def anonymize_document(
 ):
     """
     Anonimiza um documento e retorna o PDF processado.
-    
+
     Modos:
     - redact: Aplica tarjas pretas (padrão)
     - pseudonymize: Substitui por dados fake consistentes
@@ -474,25 +505,29 @@ async def anonymize_document(
     validate_file(file, content_bytes=file_content)
     safe_name = sanitize_filename(file.filename or "upload")
     job_id = str(uuid.uuid4())
-    
+
     # Salvar arquivo
     input_path = settings.UPLOAD_DIR / f"{job_id}_{safe_name}"
     output_dir = settings.UPLOAD_DIR
-    
+
     try:
         with open(input_path, "wb") as f:
             f.write(file_content)
-        
-        # Processar documento
-        result = pipeline.process(
-            input_path=input_path,
-            output_dir=output_dir,
-            usuario=None,
-            ip_origem=request.client.host if request.client else None,
-            mode=mode,
-            ner_mode=ner_mode
+
+        # Processar documento (bloqueante → thread pool)
+        import functools
+        result = await _run_pipeline_in_executor(
+            functools.partial(
+                pipeline.process,
+                output_dir=output_dir,
+                usuario=None,
+                ip_origem=request.client.host if request.client else None,
+                mode=mode,
+                ner_mode=ner_mode,
+            ),
+            input_path,
         )
-        
+
         # Retornar arquivo anonimizado
         return FileResponse(
             path=result.arquivo_anonimizado,
@@ -507,19 +542,24 @@ async def anonymize_document(
                 "X-Anonymization-Mode": mode or settings.ANONYMIZATION_MODE
             }
         )
-    
+
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        detail = str(e) if str(e) else type(e).__name__
-        raise HTTPException(500, f"Erro ao processar documento: {detail}")
-    
+        logger.error(f"Erro ao processar documento job={job_id}: {type(e).__name__}: {e}")
+        raise HTTPException(500, f"Erro ao processar documento: {type(e).__name__}")
+
     finally:
-        # Manter arquivos para auditoria (limpar depois via job)
-        pass
+        # Limpar arquivo de input (output mantido para auditoria com TTL externo)
+        if input_path.exists():
+            try:
+                input_path.unlink()
+            except OSError:
+                pass
 
 
 @router.post("/anonymize/json", response_model=AnonymizeResponse)
+@limiter.limit(settings.RATE_LIMIT)
 async def anonymize_document_json(
     request: Request,
     file: UploadFile = File(...),
@@ -531,26 +571,31 @@ async def anonymize_document_json(
     Anonimiza um documento e retorna metadados JSON.
     Use /download/{job_id} para baixar o arquivo.
     """
-    validate_file(file)
+    # FIX: ler conteúdo antes para validar magic bytes corretamente
+    content = await file.read()
+    validate_file(file, content_bytes=content)
+    safe_name = sanitize_filename(file.filename or "upload")
     job_id = str(uuid.uuid4())
-    
+
     # Salvar arquivo
-    input_path = settings.UPLOAD_DIR / f"{job_id}_{file.filename}"
+    input_path = settings.UPLOAD_DIR / f"{job_id}_{safe_name}"
     output_dir = settings.UPLOAD_DIR
-    
+
     try:
         with open(input_path, "wb") as f:
-            content = await file.read()
             f.write(content)
-        
-        # Processar documento
-        result = pipeline.process(
-            input_path=input_path,
-            output_dir=output_dir,
-            usuario=None,
-            ip_origem=request.client.host if request.client else None
+
+        import functools
+        result = await _run_pipeline_in_executor(
+            functools.partial(
+                pipeline.process,
+                output_dir=output_dir,
+                usuario=None,
+                ip_origem=request.client.host if request.client else None,
+            ),
+            input_path,
         )
-        
+
         return AnonymizeResponse(
             job_id=result.job_id,
             arquivo_original=file.filename,
@@ -571,28 +616,56 @@ async def anonymize_document_json(
             ],
             tempo_processamento_ms=result.tempo_processamento_ms
         )
-    
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(500, f"Erro ao processar documento: {str(e)}")
+        logger.error(f"Erro ao processar JSON job={job_id}: {type(e).__name__}: {e}")
+        raise HTTPException(500, f"Erro ao processar documento: {type(e).__name__}")
+
+    finally:
+        if input_path.exists():
+            try:
+                input_path.unlink()
+            except OSError:
+                pass
 
 
 @router.get("/download/{job_id}")
 async def download_anonymized(job_id: str):
     """
     Baixa um arquivo anonimizado pelo job_id.
+    Busca pelo job_id no log de auditoria e depois no disco.
     """
-    # Buscar arquivo pelo job_id
-    for file_path in settings.UPLOAD_DIR.glob(f"*_anonimizado.pdf"):
-        # Verificar no log de auditoria
-        log = audit_logger.get_log(job_id)
-        if log and log.arquivo_anonimizado == file_path.name:
-            return FileResponse(
-                path=file_path,
-                filename=file_path.name,
-                media_type="application/pdf"
-            )
-    
-    raise HTTPException(404, "Arquivo não encontrado")
+    # FIX: buscar via audit log index (O(1)) e localizar arquivo por job_id no nome
+    log = audit_logger.get_log(job_id)
+    if not log:
+        raise HTTPException(404, "Job não encontrado no log de auditoria")
+
+    # Procurar arquivo pelo nome registrado no log
+    file_path = settings.UPLOAD_DIR / log.arquivo_anonimizado
+    if not file_path.exists():
+        # Tentar encontrar por glob (nome pode ter sufixo diferente)
+        candidates = list(settings.UPLOAD_DIR.glob(f"{job_id}*_anonimizado.pdf")) + \
+                     list(settings.UPLOAD_DIR.glob(f"{job_id}*_pseudonimizado.pdf"))
+        if not candidates:
+            raise HTTPException(404, "Arquivo anonimizado não encontrado em disco")
+        file_path = candidates[0]
+
+    return FileResponse(
+        path=file_path,
+        filename=file_path.name,
+        media_type="application/pdf"
+    )
+
+
+# FIX: /audit/stats DEVE vir ANTES de /audit/{job_id} para não ser interpretado como job_id
+@router.get("/audit/stats")
+async def get_audit_stats():
+    """
+    Retorna estatísticas gerais de auditoria.
+    """
+    return audit_logger.get_statistics()
 
 
 @router.get("/audit/{job_id}", response_model=AuditLog)
@@ -601,10 +674,10 @@ async def get_audit_log(job_id: str):
     Consulta log de auditoria de um job.
     """
     log = audit_logger.get_log(job_id)
-    
+
     if not log:
         raise HTTPException(404, "Job não encontrado")
-    
+
     return AuditLog(
         job_id=log.job_id,
         timestamp=log.timestamp,
@@ -616,14 +689,6 @@ async def get_audit_log(job_id: str):
         usuario=log.usuario,
         ip_origem=log.ip_origem
     )
-
-
-@router.get("/audit/stats")
-async def get_audit_stats():
-    """
-    Retorna estatísticas gerais de auditoria.
-    """
-    return audit_logger.get_statistics()
 
 
 @router.post("/allowlist")
@@ -638,7 +703,7 @@ async def add_to_allowlist(entry: AllowlistEntry):
         ativo=entry.ativo
     )
     allowlist_manager.add_item(item)
-    
+
     return {"message": f"'{entry.nome}' adicionado à lista branca"}
 
 
@@ -664,7 +729,7 @@ async def remove_from_allowlist(nome: str):
     """
     if allowlist_manager.remove_item(nome):
         return {"message": f"'{nome}' removido da lista branca"}
-    
+
     raise HTTPException(404, "Item não encontrado na lista branca")
 
 
@@ -680,7 +745,7 @@ async def get_allowlist_stats():
 async def stream_progress(job_id: str):
     """
     Stream de progresso em tempo real (Server-Sent Events).
-    
+
     Uso no frontend:
         const evtSource = new EventSource('/api/progress/{job_id}');
         evtSource.onmessage = (e) => { console.log(JSON.parse(e.data)); };
@@ -693,7 +758,7 @@ async def stream_progress(job_id: str):
                     # Aguardar update com timeout de 30s
                     update = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {json.dumps(update.to_dict())}\n\n"
-                    
+
                     # Se chegou a 100%, finalizar stream
                     if update.porcentagem >= 100:
                         yield f"data: {json.dumps({'done': True})}\n\n"
@@ -703,7 +768,7 @@ async def stream_progress(job_id: str):
                     yield f": heartbeat\n\n"
         finally:
             progress_manager.unregister_listener(job_id, queue)
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",

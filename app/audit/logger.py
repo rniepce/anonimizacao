@@ -4,15 +4,16 @@ Registra todas as operações de anonimização com hashes
 """
 import hashlib
 import json
+import threading
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
 
+from app.config import settings
+
 # Hora Legal Brasileira (UTC-3) conforme CESEC
 HLB = timezone(timedelta(hours=-3))
-
-from app.config import settings
 
 
 @dataclass
@@ -36,45 +37,76 @@ class AuditLogger:
     """
     Sistema de auditoria imutável para rastreabilidade.
     Gera hashes SHA-256 e armazena logs em formato JSON Lines.
+
+    Thread-safe (threading.Lock) e process-safe (filelock).
+    Mantém índice em memória para lookups O(1) por job_id.
     """
-    
+
     def __init__(self, logs_dir: Path = None):
         self.logs_dir = logs_dir or settings.LOGS_DIR
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = self.logs_dir / "audit.jsonl"
-    
+
+        # Lock in-process (threading)
+        self._thread_lock = threading.Lock()
+
+        # Índice em memória job_id → AuditEntry para lookups O(1)
+        self._index: dict[str, AuditEntry] = {}
+
+        # Carregar índice existente
+        self._load_index()
+
+    def _load_index(self) -> None:
+        """Carrega índice job_id → AuditEntry a partir do arquivo em disco."""
+        if not self.log_file.exists():
+            return
+        try:
+            with open(self.log_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        entry = AuditEntry(**data)
+                        self._index[entry.job_id] = entry
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+        except OSError:
+            pass
+
     @staticmethod
     def calculate_hash(file_path: Path) -> str:
         """
         Calcula hash SHA-256 de um arquivo.
-        
+
         Args:
             file_path: Caminho do arquivo
-            
+
         Returns:
             Hash SHA-256 em hexadecimal
         """
         sha256 = hashlib.sha256()
-        
+
         with open(file_path, 'rb') as f:
             for chunk in iter(lambda: f.read(8192), b''):
                 sha256.update(chunk)
-        
+
         return sha256.hexdigest()
-    
+
     @staticmethod
     def calculate_hash_bytes(content: bytes) -> str:
         """
         Calcula hash SHA-256 de bytes.
-        
+
         Args:
             content: Conteúdo em bytes
-            
+
         Returns:
             Hash SHA-256 em hexadecimal
         """
         return hashlib.sha256(content).hexdigest()
-    
+
     def log_anonymization(
         self,
         job_id: str,
@@ -89,7 +121,8 @@ class AuditLogger:
     ) -> AuditEntry:
         """
         Registra uma operação de anonimização.
-        
+        Thread-safe e process-safe via filelock.
+
         Args:
             job_id: ID único do job
             arquivo_original: Caminho do arquivo original
@@ -100,7 +133,7 @@ class AuditLogger:
             tempo_processamento_ms: Tempo de processamento
             usuario: Usuário que executou (opcional)
             ip_origem: IP de origem (opcional)
-            
+
         Returns:
             Entrada de auditoria criada
         """
@@ -118,37 +151,40 @@ class AuditLogger:
             usuario=usuario,
             ip_origem=ip_origem
         )
-        
-        # Append ao arquivo de log (JSON Lines)
-        with open(self.log_file, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(asdict(entry), ensure_ascii=False) + '\n')
-        
+
+        line = json.dumps(asdict(entry), ensure_ascii=False) + '\n'
+
+        # Escrita thread-safe + process-safe
+        with self._thread_lock:
+            try:
+                from filelock import FileLock
+                lock_path = str(self.log_file) + ".lock"
+                with FileLock(lock_path, timeout=10):
+                    with open(self.log_file, 'a', encoding='utf-8') as f:
+                        f.write(line)
+            except ImportError:
+                # filelock não disponível: usar apenas thread lock (já adquirido)
+                with open(self.log_file, 'a', encoding='utf-8') as f:
+                    f.write(line)
+
+            # Atualizar índice em memória
+            self._index[job_id] = entry
+
         return entry
-    
+
     def get_log(self, job_id: str) -> Optional[AuditEntry]:
         """
         Busca um registro de auditoria por job_id.
-        
+        O(1) via índice em memória.
+
         Args:
             job_id: ID do job
-            
+
         Returns:
             AuditEntry se encontrado, None caso contrário
         """
-        if not self.log_file.exists():
-            return None
-        
-        with open(self.log_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                try:
-                    data = json.loads(line.strip())
-                    if data.get('job_id') == job_id:
-                        return AuditEntry(**data)
-                except json.JSONDecodeError:
-                    continue
-        
-        return None
-    
+        return self._index.get(job_id)
+
     def get_logs_by_date(
         self,
         start_date: datetime,
@@ -156,104 +192,93 @@ class AuditLogger:
     ) -> list[AuditEntry]:
         """
         Busca logs em um intervalo de datas.
-        
+
         Args:
             start_date: Data inicial
             end_date: Data final
-            
+
         Returns:
             Lista de entradas no período
         """
-        if not self.log_file.exists():
-            return []
-        
         results = []
-        
-        with open(self.log_file, 'r', encoding='utf-8') as f:
-            for line in f:
+
+        with self._thread_lock:
+            for entry in self._index.values():
                 try:
-                    data = json.loads(line.strip())
                     timestamp = datetime.fromisoformat(
-                        data['timestamp'].replace('Z', '+00:00')
+                        entry.timestamp.replace('Z', '+00:00')
                     )
-                    
                     if start_date <= timestamp <= end_date:
-                        results.append(AuditEntry(**data))
-                except (json.JSONDecodeError, KeyError, ValueError):
+                        results.append(entry)
+                except (ValueError, AttributeError):
                     continue
-        
+
         return results
-    
+
     def get_statistics(self) -> dict:
         """
         Retorna estatísticas gerais dos logs.
-        
+        O(n) sobre índice em memória (sem I/O).
+
         Returns:
             Dicionário com estatísticas
         """
-        if not self.log_file.exists():
+        with self._thread_lock:
+            entries = list(self._index.values())
+
+        if not entries:
             return {
                 'total_jobs': 0,
                 'total_redacoes': 0,
                 'por_tipo': {},
                 'tempo_medio_ms': 0
             }
-        
-        total_jobs = 0
+
         total_redacoes = 0
         total_tempo = 0
-        por_tipo = {}
-        
-        with open(self.log_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                try:
-                    data = json.loads(line.strip())
-                    total_jobs += 1
-                    total_redacoes += data.get('total_redacoes', 0)
-                    total_tempo += data.get('tempo_processamento_ms', 0)
-                    
-                    for regra in data.get('regras_aplicadas', []):
-                        if regra not in por_tipo:
-                            por_tipo[regra] = 0
-                        por_tipo[regra] += 1
-                except json.JSONDecodeError:
-                    continue
-        
+        por_tipo: dict[str, int] = {}
+
+        for entry in entries:
+            total_redacoes += entry.total_redacoes
+            total_tempo += entry.tempo_processamento_ms
+            for regra in entry.regras_aplicadas:
+                por_tipo[regra] = por_tipo.get(regra, 0) + 1
+
+        n = len(entries)
         return {
-            'total_jobs': total_jobs,
+            'total_jobs': n,
             'total_redacoes': total_redacoes,
             'por_tipo': por_tipo,
-            'tempo_medio_ms': total_tempo // total_jobs if total_jobs > 0 else 0
+            'tempo_medio_ms': total_tempo // n if n > 0 else 0
         }
-    
+
     def verify_integrity(self, job_id: str, file_path: Path) -> dict:
         """
         Verifica integridade de um arquivo comparando com hash registrado.
-        
+
         Args:
             job_id: ID do job
             file_path: Caminho do arquivo a verificar
-            
+
         Returns:
             Resultado da verificação
         """
         entry = self.get_log(job_id)
-        
+
         if not entry:
             return {
                 'valido': False,
                 'erro': 'Job não encontrado no log de auditoria'
             }
-        
+
         if not file_path.exists():
             return {
                 'valido': False,
                 'erro': 'Arquivo não encontrado'
             }
-        
+
         hash_atual = self.calculate_hash(file_path)
-        
-        # Verificar se é o arquivo original ou anonimizado
+
         if hash_atual == entry.hash_original:
             return {
                 'valido': True,

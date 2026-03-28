@@ -1,13 +1,15 @@
 """
 TJMG Anonymizer Pipeline - FastAPI Application
 """
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -20,10 +22,39 @@ logger = logging.getLogger(__name__)
 # ─── Rate Limiter ─────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
 
+# TTL de arquivos temporários em segundos (padrão: 24h)
+UPLOAD_TTL_SECONDS: int = 60 * 60 * 24
+# Intervalo de verificação da limpeza (padrão: 1h)
+CLEANUP_INTERVAL_SECONDS: int = 60 * 60
+
+
+async def _cleanup_old_uploads() -> None:
+    """
+    Task em background que remove arquivos de upload expirados (TTL).
+    Executa periodicamente a cada CLEANUP_INTERVAL_SECONDS.
+    """
+    while True:
+        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+        cutoff = time.time() - UPLOAD_TTL_SECONDS
+        removed = 0
+        for f in settings.UPLOAD_DIR.iterdir():
+            try:
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    removed += 1
+            except OSError:
+                pass
+        if removed:
+            logger.info(f"🧹 Limpeza de uploads: {removed} arquivo(s) removido(s) (TTL={UPLOAD_TTL_SECONDS}s)")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Pre-load models at startup so first request is fast."""
+    """
+    Gerencia o ciclo de vida da aplicação:
+    - Startup: pré-carrega modelos NER, inicia task de limpeza
+    - Shutdown: cancela task de limpeza
+    """
     logger.info("🚀 Pré-carregando modelos NER...")
     try:
         from app.core.pipeline import pipeline
@@ -33,7 +64,20 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Modelos NER carregados com sucesso")
     except Exception as e:
         logger.warning(f"⚠️ Erro ao pré-carregar modelos: {e}")
+
+    # Iniciar task de limpeza periódica de uploads
+    cleanup_task = asyncio.create_task(_cleanup_old_uploads())
+    logger.info(f"🧹 Task de limpeza iniciada (TTL={UPLOAD_TTL_SECONDS}s, intervalo={CLEANUP_INTERVAL_SECONDS}s)")
+
     yield
+
+    # Shutdown: cancelar task de limpeza
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("👋 Limpeza encerrada. Aplicação desligada.")
 
 
 app = FastAPI(
