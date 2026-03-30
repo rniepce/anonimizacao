@@ -20,7 +20,7 @@ Pillow==10.2.0
 
 # NLP
 spacy==3.7.2
-gliner>=0.2.0
+# gliner>=0.2.0  # Removido do deploy — economia de ~500MB RAM
 
 # Development
 pytest==7.4.4

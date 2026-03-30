@@ -28,7 +28,7 @@ from app.api.schemas import (
     SelectiveAnonymizeRequest,
     AllowlistEntry,
 )
-from app.core.pipeline import pipeline
+from app.core.pipeline import get_pipeline
 from app.core.allowlist import allowlist_manager, AllowlistItem
 from app.core.progress import progress_manager
 from app.audit.logger import audit_logger
@@ -150,7 +150,7 @@ async def analyze_document(
         # Analisar documento (bloqueante → thread pool)
         from app.core.pdf_handler import pdf_handler
         pdf_info = await _run_pipeline_in_executor(pdf_handler.get_info, temp_path)
-        dados = await _run_pipeline_in_executor(pipeline.analyze_only, temp_path, ner_mode)
+        dados = await _run_pipeline_in_executor(get_pipeline().analyze_only, temp_path, ner_mode)
 
         tempo_ms = int((time.time() - start_time) * 1000)
 
@@ -222,7 +222,7 @@ async def analyze_preview(
         pdf_info = await _run_pipeline_in_executor(pdf_handler.get_info, temp_path)
 
         # Analisar documento (bloqueante → thread pool)
-        dados = await _run_pipeline_in_executor(pipeline.analyze_only, temp_path, ner_mode)
+        dados = await _run_pipeline_in_executor(get_pipeline().analyze_only, temp_path, ner_mode)
 
         # Extrair texto por página para o visualizador interativo
         import fitz as fitz_lib
@@ -518,7 +518,7 @@ async def anonymize_document(
         import functools
         result = await _run_pipeline_in_executor(
             functools.partial(
-                pipeline.process,
+                get_pipeline().process,
                 output_dir=output_dir,
                 usuario=None,
                 ip_origem=request.client.host if request.client else None,
@@ -588,7 +588,7 @@ async def anonymize_document_json(
         import functools
         result = await _run_pipeline_in_executor(
             functools.partial(
-                pipeline.process,
+                get_pipeline().process,
                 output_dir=output_dir,
                 usuario=None,
                 ip_origem=request.client.host if request.client else None,

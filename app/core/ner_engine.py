@@ -2,7 +2,6 @@
 Motor NER (Named Entity Recognition) para identificação de entidades
 Usa SpaCy para reconhecimento de nomes, endereços e contexto sensível
 """
-import spacy
 from dataclasses import dataclass
 from typing import Optional
 
@@ -51,8 +50,9 @@ class NEREngine:
     
     @property
     def nlp(self):
-        """Lazy loading do modelo SpaCy"""
+        """Lazy loading do modelo SpaCy (import deferido para economizar RAM no startup)"""
         if self._nlp is None:
+            import spacy
             try:
                 self._nlp = spacy.load(self.model_name)
             except OSError:

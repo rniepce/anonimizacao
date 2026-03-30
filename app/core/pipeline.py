@@ -12,9 +12,7 @@ from typing import Optional
 
 from app.config import settings
 from app.core.pdf_handler import pdf_handler, TextBlock
-from app.core.ocr_engine import ocr_engine, OCRBox
 from app.core.regex_matcher import regex_matcher, RegexMatch
-from app.core.ner_engine import ner_engine, NEREntity
 from app.core.allowlist import allowlist_manager
 from app.core.redactor import redactor, RedactionArea
 from app.audit.logger import audit_logger
@@ -172,6 +170,7 @@ class AnonymizationPipeline:
 
         # --- SpaCy — fallback final ---
         if self._ner_engine is None:
+            from app.core.ner_engine import ner_engine
             self._ner_engine = ner_engine
             logger.info("NER primário: SpaCy (fallback)")
 
@@ -199,6 +198,7 @@ class AnonymizationPipeline:
                 logger.warning("PaddleOCR não disponível, usando Tesseract")
 
         if self._ocr_engine is None:
+            from app.core.ocr_engine import ocr_engine
             self._ocr_engine = ocr_engine
             logger.info("Usando OCR com Tesseract")
 
@@ -270,6 +270,7 @@ class AnonymizationPipeline:
             texto_completo = '\n'.join(item.texto for item in text_items)
         else:
             try:
+                from app.core.ocr_engine import OCRBox
                 text_items = self._extract_ocr(input_path)
                 texto_completo = self._ocr_engine.get_full_text(
                     [OCRBox(
@@ -396,6 +397,7 @@ class AnonymizationPipeline:
             texto_completo = '\n'.join(item.texto for item in text_items)
         else:
             try:
+                from app.core.ocr_engine import OCRBox
                 text_items = self._extract_ocr(input_path)
                 texto_completo = self._ocr_engine.get_full_text(
                     [OCRBox(
@@ -831,5 +833,13 @@ class AnonymizationPipeline:
         return []
 
 
-# Singleton para uso global
-pipeline = AnonymizationPipeline()
+# Lazy singleton — não cria instância no import (evita carregar modelos ML no startup)
+_pipeline: AnonymizationPipeline | None = None
+
+
+def get_pipeline() -> AnonymizationPipeline:
+    """Retorna o singleton do pipeline, criando-o na primeira chamada."""
+    global _pipeline
+    if _pipeline is None:
+        _pipeline = AnonymizationPipeline()
+    return _pipeline

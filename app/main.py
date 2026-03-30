@@ -61,9 +61,10 @@ async def _preload_models() -> None:
         import functools
 
         def _load():
-            from app.core.pipeline import pipeline
+            from app.core.pipeline import get_pipeline
+            p = get_pipeline()
             test_text = "João da Silva, CPF 123.456.789-00"
-            pipeline._ner_engine.extract_entities(test_text)
+            p._ner_engine.extract_entities(test_text)
 
         await loop.run_in_executor(None, _load)
         logger.info("\u2705 Modelos NER carregados com sucesso (background warm-up)")

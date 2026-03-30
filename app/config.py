@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     #   (requer fine-tuning adicional no LeNER-Br)
     NER_TRANSFORMER_MODEL: str = "pierreguillou/bert-base-cased-pt-lenerbr"
     # GLiNER como camada suplementar ao transformer (captura entidades de cauda longa)
-    NER_GLINER_SUPPLEMENTARY: bool = True
+    NER_GLINER_SUPPLEMENTARY: bool = False
     GLINER_MODEL: str = "urchade/gliner_multi_pii-v1"
     GLINER_DEEP_MODEL: str = "Ai4Privacy/star-pii-gliner-multi-v1"
     GLINER_CONFIDENCE: float = 0.5
