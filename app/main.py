@@ -153,13 +153,14 @@ async def add_security_headers(request: Request, call_next) -> Response:
 # Rotas da API
 app.include_router(router, prefix=settings.API_PREFIX)
 
-# Servir frontend estático (build React/Vite)
-frontend_path = Path(__file__).parent.parent / "frontend" / "dist"
-if frontend_path.exists():
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-
-
 @app.get("/health")
 async def health_check():
-    """Endpoint de health check"""
+    """Endpoint de health check — deve estar ANTES do mount estático."""
     return {"status": "healthy", "version": "1.0.0"}
+
+
+# Servir frontend estático (build React/Vite)
+# IMPORTANTE: mount estático deve ser o ÚLTIMO — captura todas as rotas não definidas
+frontend_path_static = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_path_static.exists():
+    app.mount("/", StaticFiles(directory=frontend_path_static, html=True), name="frontend")
