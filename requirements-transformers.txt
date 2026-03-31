@@ -2,6 +2,7 @@
 # Install with: pip install -r requirements-transformers.txt
 
 # CPU-only PyTorch (Railway não tem GPU — economiza ~1.2GB vs versão com CUDA)
---index-url https://download.pytorch.org/whl/cpu
-transformers>=4.36.0
+# --extra-index-url para PyTorch CPU; PyPI padrão para transformers
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.1.0
+transformers>=4.36.0
