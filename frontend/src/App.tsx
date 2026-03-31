@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { Metadata, PreviewData, AnonymizationMeta, ProgressInfo, CustomTerm } from './types';
 import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
@@ -245,9 +245,21 @@ function App() {
 
     const isProcessing = view === 'progress';
 
+    // Mobile sidebar
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+    // Dark mode
+    const [isDarkMode, setIsDarkMode] = useState(() =>
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+    );
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
+    }, [isDarkMode]);
+    const toggleDarkMode = useCallback(() => setIsDarkMode(d => !d), []);
+
     return (
         <div className="app-container">
-            <Header />
+            <Header isDarkMode={isDarkMode} onToggleDark={toggleDarkMode} />
 
             <div className="main-content flex">
                 {/* Left Sidebar: Generic Nav OR Document Pages if reviewing */}
@@ -258,9 +270,20 @@ function App() {
                         onPageChange={setViewerPage}
                     />
                 ) : (
-                    <aside className="main-nav-sidebar">
+                    <aside className={`main-nav-sidebar${isSidebarOpen ? ' open' : ''}`}>
+                        {/* Mobile close button */}
+                        <button
+                            className="material-symbols-outlined bg-transparent border-none cursor-pointer mb-4"
+                            style={{ color: 'var(--color-sidebar-text-dim)', fontSize: '22px', display: 'none', alignSelf: 'flex-end' }}
+                            onClick={() => setIsSidebarOpen(false)}
+                        >
+                            close
+                        </button>
                         <div className="nav-brand">
-                            <span className="brand-title">TJMG</span>
+                            <span className="brand-title">
+                                <span className="brand-tjmg">TJMG</span>{' '}
+                                <span className="brand-anon">Anon</span>
+                            </span>
                             <span className="brand-subtitle">Anonimizador</span>
                         </div>
                         <button className="btn btn-primary w-full nav-new-btn" onClick={handleNewFile}>
@@ -280,101 +303,139 @@ function App() {
 
                 {/* Center Column: Upload, Progress, or Viewer */}
                 <section className="center-workspace">
-                    {!previewData && !isProcessing && (
-                        <div className="upload-view-container w-full max-w-4xl">
-                            <header className="upload-header mb-10 text-left">
-                                <h2 className="text-3xl font-extrabold font-headline tracking-tight text-on-surface mb-2">Upload de Documento</h2>
-                                <p className="text-on-surface-variant font-medium">Prepare seus arquivos para o processo de anonimização automatizada.</p>
-                            </header>
-
-                            <UploadSection
-                                onFileSelect={handleFileSelect}
-                                selectedFile={selectedFile}
-                                onRemoveFile={handleRemoveFile}
-                            />
-
-                            {selectedFile && (
-                                <div className="mt-6">
-                                    <MetadataForm
-                                        metadata={metadata}
-                                        onChange={setMetadata}
-                                        onSubmit={handleAnalyze}
-                                        isProcessing={isProcessing}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {isProcessing && (
-                        <div className="progress-view-container w-full max-w-4xl">
-                            <ProgressSection info={progressInfo} />
-                        </div>
-                    )}
-
-                    {previewData && (
-                        <div className="viewer-container w-full max-w-4xl bg-surface-container-lowest shadow-[0_12px_40px_rgba(25,28,29,0.06)] rounded-lg p-16 relative">
-                            {/* Document Header */}
-                            <div className="mb-12 border-b border-outline-variant border-opacity-20 pb-8">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <span className="text-xs font-bold font-label uppercase tracking-widest text-primary mb-2 block">Processo Digital</span>
-                                        <h2 className="text-2xl font-extrabold font-headline tracking-tight text-on-surface">{selectedFile?.name || 'Documento Anonimizado'}</h2>
-                                    </div>
-                                    <div className="bg-secondary-container px-3 py-1 rounded-full text-on-secondary-container text-xs font-bold">
-                                        REVISÃO PENDENTE
-                                    </div>
-                                </div>
-                            </div>
-
-                            <DocumentViewer
-                                textByPage={previewData.texto_por_pagina}
-                                totalPages={previewData.total_paginas}
-                                currentPage={viewerPage}
-                                onPageChange={setViewerPage}
-                                entities={previewData.dados_sensiveis}
-                                selectedEntityIds={selectedEntityIds}
-                                customTerms={customTerms}
-                                onWordClick={handleAddCustomTerm}
-                            />
-
-                            {/* Action FAB */}
-                            <button
-                                className="fixed bottom-10 right-[350px] bg-gradient-to-br from-[#003f87] to-[#0056b3] text-white p-4 rounded-full shadow-[0_12px_40px_rgba(25,28,29,0.2)] flex items-center gap-3 active:scale-95 transition-all"
-                                onClick={handleDownload}
-                                disabled={isAnonymizing}
+                    <AnimatePresence mode="wait">
+                        {!previewData && !isProcessing && (
+                            <motion.div
+                                key="upload"
+                                className="upload-view-container w-full max-w-4xl"
+                                initial={{ opacity: 0, y: 16 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -8 }}
+                                transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
                             >
-                                <span className="material-symbols-outlined">verified_user</span>
-                                <span className="font-bold text-sm pr-2">Aprovar Tudo</span>
-                            </button>
-                        </div>
-                    )}
+                                <header className="upload-header mb-10 text-left">
+                                    <h2 className="text-3xl font-extrabold font-headline tracking-tight text-on-surface mb-2">Upload de Documento</h2>
+                                    <p className="text-on-surface-variant font-medium">Prepare seus arquivos para o processo de anonimização automatizada.</p>
+                                </header>
+
+                                <UploadSection
+                                    onFileSelect={handleFileSelect}
+                                    selectedFile={selectedFile}
+                                    onRemoveFile={handleRemoveFile}
+                                />
+
+                                {selectedFile && (
+                                    <div className="mt-6">
+                                        <MetadataForm
+                                            metadata={metadata}
+                                            onChange={setMetadata}
+                                            onSubmit={handleAnalyze}
+                                            isProcessing={isProcessing}
+                                        />
+                                    </div>
+                                )}
+                            </motion.div>
+                        )}
+
+                        {isProcessing && (
+                            <motion.div
+                                key="progress"
+                                className="progress-view-container w-full max-w-4xl"
+                                initial={{ opacity: 0, scale: 0.97 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.97 }}
+                                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                            >
+                                <ProgressSection info={progressInfo} />
+                            </motion.div>
+                        )}
+
+                        {previewData && (
+                            <motion.div
+                                key="review"
+                                className="viewer-container w-full max-w-4xl rounded-lg p-16 relative document-paper"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                            >
+                                {/* Document Header */}
+                                <div className="mb-12 pb-8" style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <span className="text-xs font-bold font-label uppercase tracking-widest text-primary mb-2 block">Processo Digital</span>
+                                            <h2 className="text-2xl font-extrabold font-headline tracking-tight text-on-surface">{selectedFile?.name || 'Documento Anonimizado'}</h2>
+                                        </div>
+                                        <div className="review-pending-badge">
+                                            REVISÃO PENDENTE
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <DocumentViewer
+                                    textByPage={previewData.texto_por_pagina}
+                                    totalPages={previewData.total_paginas}
+                                    currentPage={viewerPage}
+                                    onPageChange={setViewerPage}
+                                    entities={previewData.dados_sensiveis}
+                                    selectedEntityIds={selectedEntityIds}
+                                    customTerms={customTerms}
+                                    onWordClick={handleAddCustomTerm}
+                                />
+
+                                {/* Action FAB */}
+                                <motion.button
+                                    initial={{ scale: 0, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    whileHover={{ scale: 1.05, boxShadow: '0 16px 48px rgba(0,53,128,0.4)' }}
+                                    whileTap={{ scale: 0.95 }}
+                                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                                    className="fixed bottom-10 right-[350px] text-white p-4 rounded-full flex items-center gap-3"
+                                    style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-container))', boxShadow: 'var(--shadow-floating)' }}
+                                    onClick={handleDownload}
+                                    disabled={isAnonymizing}
+                                >
+                                    <span className="material-symbols-outlined">verified_user</span>
+                                    <span className="font-bold text-sm pr-2">Aprovar Tudo</span>
+                                </motion.button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </section>
 
                 {/* Right Sidebar: Entity Panel (Only when reviewing) */}
-                {previewData && (
-                    <EntityPanel
-                        entities={previewData.dados_sensiveis}
-                        selectedIds={selectedEntityIds}
-                        onToggleEntity={handleToggleEntity}
-                        onSelectAll={handleSelectAll}
-                        onDeselectAll={handleDeselectAll}
-                        customTerms={customTerms}
-                        onAddCustomTerm={handleAddCustomTerm}
-                        onRemoveCustomTerm={handleRemoveCustomTerm}
-                        onConfirmAnonymize={handleConfirmAnonymize}
-                        isAnonymizing={isAnonymizing}
-                        totalPages={previewData.total_paginas}
-                        processingTimeMs={previewData.tempo_processamento_ms}
-                        onSetEntitiesSelection={handleSetEntitiesSelection}
-                        onEntityClick={setViewerPage}
-                    />
-                )}
+                <AnimatePresence>
+                    {previewData && (
+                        <motion.div
+                            initial={{ x: 320, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: 320, opacity: 0 }}
+                            transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+                        >
+                            <EntityPanel
+                                entities={previewData.dados_sensiveis}
+                                selectedIds={selectedEntityIds}
+                                onToggleEntity={handleToggleEntity}
+                                onSelectAll={handleSelectAll}
+                                onDeselectAll={handleDeselectAll}
+                                customTerms={customTerms}
+                                onAddCustomTerm={handleAddCustomTerm}
+                                onRemoveCustomTerm={handleRemoveCustomTerm}
+                                onConfirmAnonymize={handleConfirmAnonymize}
+                                isAnonymizing={isAnonymizing}
+                                totalPages={previewData.total_paginas}
+                                processingTimeMs={previewData.tempo_processamento_ms}
+                                onSetEntitiesSelection={handleSetEntitiesSelection}
+                                onEntityClick={setViewerPage}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
             
             {/* Background Decorative Elements */}
-            <div className="fixed top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary opacity-5 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
-            <div className="fixed bottom-[-10%] left-[-10%] w-[30%] h-[30%] bg-secondary-container opacity-10 rounded-full blur-[100px] -z-10 pointer-events-none"></div>
+            <div className="fixed top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full pointer-events-none" style={{ background: 'var(--color-primary)', opacity: 0.04, filter: 'blur(120px)', zIndex: -10 }} />
+            <div className="fixed bottom-[-10%] left-[-10%] w-[30%] h-[30%] rounded-full pointer-events-none" style={{ background: 'var(--color-accent)', opacity: 0.06, filter: 'blur(100px)', zIndex: -10 }} />
         </div>
     );
 }

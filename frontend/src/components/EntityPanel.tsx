@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, KeyboardEvent } from 'react';
+import { motion } from 'framer-motion';
 import type { SensitiveEntity, CustomTerm } from '../types';
 
 interface IndexedEntity extends SensitiveEntity {
@@ -22,6 +23,29 @@ interface Props {
     onEntityClick: (page: number) => void;
 }
 
+function getEntityBorderClass(tipo: string): string {
+    const t = tipo.toLowerCase();
+    if (t === 'cpf' || t === 'cnpj') return 'entity-card-border-cpf';
+    if (t === 'pessoa') return 'entity-card-border-pessoa';
+    if (t === 'dinheiro') return 'entity-card-border-dinheiro';
+    if (t === 'documento' || t === 'rg' || t === 'oab') return 'entity-card-border-documento';
+    if (t === 'email') return 'entity-card-border-email';
+    if (t === 'organizacao') return 'entity-card-border-organizacao';
+    if (t === 'telefone') return 'entity-card-border-telefone';
+    if (t === 'endereco' || t === 'cep') return 'entity-card-border-endereco';
+    if (t === 'proc_cnj') return 'entity-card-border-proc_cnj';
+    return 'entity-card-border-outro';
+}
+
+const cardVariants = {
+    hidden: { opacity: 0, x: 12 },
+    visible: { opacity: 1, x: 0, transition: { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const } },
+};
+
+const listVariants = {
+    visible: { transition: { staggerChildren: 0.04 } },
+};
+
 function EntityPanel({
     entities,
     selectedIds,
@@ -40,9 +64,8 @@ function EntityPanel({
 }: Props) {
     const [newTerm, setNewTerm] = useState('');
     const [newTermType, setNewTermType] = useState('OUTRO');
-    const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(['PESSOA', 'Documentos', 'Processo CNJ'])); // Default expanded
+    const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(['PESSOA', 'Documentos', 'Processo CNJ']));
 
-    // Group entities by simplified categories for the new UI format
     const grouped = useMemo(() => {
         const groups: Record<string, IndexedEntity[]> = {
             'Processo CNJ': [],
@@ -51,7 +74,7 @@ function EntityPanel({
             'Contato': [],
             'Outros': []
         };
-        
+
         entities.forEach((entity, index) => {
             const e = { ...entity, _index: index };
             if (entity.tipo === 'PROC_CNJ') groups['Processo CNJ'].push(e);
@@ -61,11 +84,10 @@ function EntityPanel({
             else groups['Outros'].push(e);
         });
 
-        // Remove empty groups
         Object.keys(groups).forEach(key => {
             if (groups[key].length === 0) delete groups[key];
         });
-        
+
         return groups;
     }, [entities]);
 
@@ -99,100 +121,183 @@ function EntityPanel({
     };
 
     return (
-        <aside className="w-[320px] bg-[#f3f4f5] border-l border-[#edeeef] h-full flex flex-col p-6 overflow-y-auto shrink-0 relative">
-            <h3 className="text-on-surface font-extrabold text-lg mb-4 flex items-center gap-2 m-0">
+        <aside
+            className="entity-panel-aside w-[320px] h-full flex flex-col p-6 overflow-y-auto shrink-0 relative"
+            style={{
+                background: 'var(--color-surface-container-lowest)',
+                borderLeft: '1px solid var(--color-surface-container-high)',
+            }}
+        >
+            <h3 className="font-extrabold text-lg mb-4 flex items-center gap-2 m-0" style={{ color: 'var(--color-on-surface)' }}>
                 <span className="material-symbols-outlined text-primary">visibility</span>
                 Entidades
             </h3>
 
             <div className="flex gap-2 mb-6">
-                <button className="flex-1 bg-white border border-[#c2c6d4] text-xs font-bold py-1.5 rounded-md hover:bg-[#e7e8e9] transition-colors cursor-pointer" onClick={onSelectAll}>Selecionar Tudo</button>
-                <button className="flex-1 bg-white border border-[#c2c6d4] text-xs font-bold py-1.5 rounded-md hover:bg-[#e7e8e9] transition-colors cursor-pointer" onClick={onDeselectAll}>Limpar</button>
+                <button
+                    className="flex-1 text-xs font-bold py-1.5 rounded-md transition-colors cursor-pointer btn btn-secondary"
+                    onClick={onSelectAll}
+                >
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
+                    Selecionar Tudo
+                </button>
+                <button
+                    className="flex-1 text-xs font-bold py-1.5 rounded-md transition-colors cursor-pointer"
+                    style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                    onClick={onDeselectAll}
+                >
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>cancel</span>
+                    Limpar
+                </button>
             </div>
 
             <div className="space-y-4 flex-1 pb-24">
                 {Object.entries(grouped).map(([groupName, items]) => {
                     const isExpanded = expandedTypes.has(groupName);
-                    
+
                     return (
                         <div key={groupName} className="group mb-4">
-                            <div 
+                            <div
                                 className="flex justify-between items-center mb-2 cursor-pointer select-none"
                                 onClick={() => toggleType(groupName)}
-                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                             >
-                                <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">{groupName} ({items.length})</span>
-                                <span className={`material-symbols-outlined text-sm text-on-surface-variant transition-transform ${isExpanded ? 'rotate-180' : ''}`}>expand_more</span>
+                                <span
+                                    className="text-xs font-bold uppercase tracking-wider entity-group-header"
+                                    style={{ color: 'var(--color-on-surface-variant)' }}
+                                >
+                                    {groupName} ({items.length})
+                                </span>
+                                <span
+                                    className="material-symbols-outlined text-sm transition-transform"
+                                    style={{
+                                        color: 'var(--color-on-surface-variant)',
+                                        fontSize: '18px',
+                                        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                        transition: 'transform 0.2s ease',
+                                    }}
+                                >
+                                    expand_more
+                                </span>
                             </div>
-                            
+
                             {isExpanded && (
-                                <div className="space-y-2 flex flex-col gap-2">
+                                <motion.div
+                                    className="flex flex-col gap-2"
+                                    initial="hidden"
+                                    animate="visible"
+                                    variants={listVariants}
+                                >
                                     {items.map(item => {
                                         const isSelected = selectedIds.has(item._index);
                                         return (
-                                            <div 
-                                                key={item._index} 
-                                                className={`bg-white p-3 rounded-lg border border-[#e1e3e4] hover:shadow-sm transition-all flex flex-col gap-1 ${!isSelected ? 'opacity-60' : ''}`}
+                                            <motion.div
+                                                key={item._index}
+                                                variants={cardVariants}
+                                                className={`p-3 rounded-lg border flex flex-col gap-1 ${getEntityBorderClass(item.tipo)} ${!isSelected ? 'opacity-60' : ''}`}
+                                                style={{
+                                                    background: 'var(--color-surface-container-lowest)',
+                                                    borderTopColor: 'var(--color-surface-container-high)',
+                                                    borderRightColor: 'var(--color-surface-container-high)',
+                                                    borderBottomColor: 'var(--color-surface-container-high)',
+                                                    transition: 'opacity 0.15s ease, box-shadow 0.15s ease',
+                                                }}
                                             >
-                                                <div className="flex justify-between items-center" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <span 
-                                                        className="text-[10px] font-bold text-primary tracking-tighter uppercase cursor-pointer"
+                                                <div className="flex justify-between items-center">
+                                                    <span
+                                                        className="text-[10px] font-bold tracking-tighter uppercase cursor-pointer"
+                                                        style={{ color: 'var(--color-primary)' }}
                                                         onClick={() => onEntityClick(item.pagina)}
                                                         title="Ir para página"
                                                     >
                                                         {item.tipo}
                                                     </span>
-                                                    <button 
-                                                        className={`material-symbols-outlined text-[18px] bg-transparent border-none cursor-pointer hover:scale-110 transition-transform ${isSelected ? 'text-primary' : 'text-error'}`}
+                                                    <button
+                                                        className="material-symbols-outlined bg-transparent border-none cursor-pointer transition-transform"
+                                                        style={{
+                                                            fontSize: '18px',
+                                                            color: isSelected ? 'var(--color-primary)' : 'var(--color-error)',
+                                                        }}
+                                                        onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.15)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
                                                         onClick={() => onToggleEntity(item._index)}
                                                         title={isSelected ? "Manter anonimizado" : "Ignorar (não será anonimizado)"}
                                                     >
                                                         {isSelected ? 'check_circle' : 'cancel'}
                                                     </button>
                                                 </div>
-                                                <span 
-                                                    className="text-sm font-medium text-on-surface truncate"
+                                                <span
+                                                    className="text-sm font-medium truncate"
+                                                    style={{ color: 'var(--color-on-surface)' }}
                                                     title={item.valor}
                                                 >
                                                     {formatEntityValor(item.valor)}
                                                 </span>
-                                            </div>
+                                            </motion.div>
                                         );
                                     })}
-                                </div>
+                                </motion.div>
                             )}
                         </div>
                     );
                 })}
 
-                {/* Custom Terms section mimicking the Accordion Item style */}
+                {/* Custom Terms */}
                 <div className="group mb-4 mt-6">
                     <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Termos Adicionais ({customTerms.length})</span>
+                        <span
+                            className="text-xs font-bold uppercase tracking-wider entity-group-header"
+                            style={{ color: 'var(--color-on-surface-variant)' }}
+                        >
+                            Termos Adicionais ({customTerms.length})
+                        </span>
                     </div>
-                    
+
                     <div className="flex gap-2 mb-3">
                         <input
                             type="text"
-                            className="flex-1 bg-white border border-[#c2c6d4] rounded-md px-2 py-1 text-xs outline-none focus:border-primary"
+                            className="flex-1 rounded-md px-2 py-1 text-xs outline-none"
+                            style={{
+                                background: 'var(--color-surface-container-lowest)',
+                                border: '1.5px solid var(--color-outline-variant)',
+                                color: 'var(--color-on-surface)',
+                                fontFamily: 'var(--font-body)',
+                            }}
                             placeholder="Adicionar..."
                             value={newTerm}
                             onChange={(e) => setNewTerm(e.target.value)}
                             onKeyDown={handleKeyDown}
                         />
-                        <button className="bg-[#003f87] hover:bg-[#0056b3] text-white border-none rounded-md px-2 text-xs font-bold cursor-pointer transition-colors" onClick={handleAddTerm}>+</button>
+                        <button
+                            className="text-white border-none rounded-md px-3 text-xs font-bold cursor-pointer transition-colors"
+                            style={{ background: 'var(--color-primary)' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-primary-container)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-primary)')}
+                            onClick={handleAddTerm}
+                        >
+                            +
+                        </button>
                     </div>
 
                     {customTerms.length > 0 && (
                         <div className="space-y-2 flex flex-col gap-2">
                             {customTerms.map((term, idx) => (
-                                <div key={idx} className="bg-white p-2 rounded-lg border border-[#e1e3e4] flex justify-between items-center">
+                                <div
+                                    key={idx}
+                                    className="p-2 rounded-lg flex justify-between items-center"
+                                    style={{
+                                        background: 'var(--color-surface-container-lowest)',
+                                        border: '1px solid var(--color-surface-container-high)',
+                                    }}
+                                >
                                     <div className="flex flex-col">
-                                        <span className="text-[10px] font-bold text-primary uppercase">{term.tipo}</span>
-                                        <span className="text-xs font-medium text-on-surface">{formatEntityValor(term.termo)}</span>
+                                        <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--color-primary)' }}>{term.tipo}</span>
+                                        <span className="text-xs font-medium" style={{ color: 'var(--color-on-surface)' }}>{formatEntityValor(term.termo)}</span>
                                     </div>
-                                    <button 
-                                        className="material-symbols-outlined text-[16px] bg-transparent border-none cursor-pointer text-error hover:scale-110 transition-transform"
+                                    <button
+                                        className="material-symbols-outlined bg-transparent border-none cursor-pointer transition-transform"
+                                        style={{ fontSize: '16px', color: 'var(--color-error)' }}
+                                        onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.15)')}
+                                        onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
                                         onClick={() => onRemoveCustomTerm(idx)}
                                         title="Remover termo"
                                     >
@@ -205,24 +310,31 @@ function EntityPanel({
                 </div>
             </div>
 
-            <div className="mt-8 pt-6 border-t border-[#e1e3e4] mb-4">
-                <div className="bg-[#003f87]/5 rounded-lg p-4 bg-opacity-5">
-                    <h4 className="text-xs font-bold text-[#003f87] mb-3 flex items-center gap-1 m-0">
-                        <span className="material-symbols-outlined text-sm">info</span>
+            {/* Summary Box */}
+            <div className="mt-8 pt-6 mb-4" style={{ borderTop: '1px solid var(--color-surface-container-high)' }}>
+                <div className="anonymization-summary">
+                    <h4 className="text-xs font-bold mb-3 flex items-center gap-1 m-0" style={{ color: 'var(--color-accent)' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>info</span>
                         RESUMO DA ANONIMIZAÇÃO
                     </h4>
-                    <div className="flex justify-between text-xs mb-1" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span className="text-on-surface-variant">Identificadas:</span>
-                        <span className="font-bold">{entities.length + customTerms.length}</span>
+                    <div className="flex justify-between text-xs mb-1">
+                        <span style={{ color: 'var(--color-on-surface-variant)' }}>Identificadas:</span>
+                        <span className="font-bold anonymization-summary-count">{entities.length + customTerms.length}</span>
                     </div>
-                    <div className="flex justify-between text-xs mb-3" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                        <span className="text-on-surface-variant">Aprovadas:</span>
-                        <span className="font-bold text-[#003f87]">{selectedIds.size + customTerms.length}</span>
+                    <div className="flex justify-between text-xs mb-3">
+                        <span style={{ color: 'var(--color-on-surface-variant)' }}>Aprovadas:</span>
+                        <span className="font-bold anonymization-summary-count">{selectedIds.size + customTerms.length}</span>
                     </div>
                 </div>
             </div>
 
-            <div className="mt-auto absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#f3f4f5] via-[#f3f4f5] to-transparent pt-12">
+            {/* CTA */}
+            <div
+                className="mt-auto absolute bottom-0 left-0 right-0 p-6 pt-12"
+                style={{
+                    background: 'linear-gradient(to top, var(--color-surface-container-lowest) 60%, transparent)',
+                }}
+            >
                 <button
                     className="w-full btn btn-primary py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={onConfirmAnonymize}
@@ -234,7 +346,7 @@ function EntityPanel({
                         </>
                     ) : (
                         <>
-                            <span className="material-symbols-outlined text-[20px]">verified_user</span>
+                            <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>verified_user</span>
                             <span className="font-bold">Anonimizar ({selectedIds.size + customTerms.length})</span>
                         </>
                     )}

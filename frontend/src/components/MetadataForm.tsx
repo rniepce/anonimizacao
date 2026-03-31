@@ -31,7 +31,7 @@ function MetadataForm({ metadata, onChange, onSubmit, isProcessing }: Props) {
                         <input
                             type="text"
                             id="classeProcessual"
-                            className="w-full bg-[#e7e8e9] border border-transparent rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-b-2 focus:border-b-[#003f87] transition-all text-on-surface"
+                            className="metadata-input"
                             placeholder="Ex: Ação Civil Pública"
                             value={metadata.classeProcessual}
                             onChange={handleChange('classeProcessual')}
@@ -45,7 +45,7 @@ function MetadataForm({ metadata, onChange, onSubmit, isProcessing }: Props) {
                         <input
                             type="text"
                             id="vara"
-                            className="w-full bg-[#e7e8e9] border border-transparent rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-b-2 focus:border-b-[#003f87] transition-all text-on-surface"
+                            className="metadata-input"
                             placeholder="Ex: 1ª Vara Cível"
                             value={metadata.vara}
                             onChange={handleChange('vara')}
@@ -59,7 +59,7 @@ function MetadataForm({ metadata, onChange, onSubmit, isProcessing }: Props) {
                         <input
                             type="text"
                             id="comarca"
-                            className="w-full bg-[#e7e8e9] border border-transparent rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-b-2 focus:border-b-[#003f87] transition-all text-on-surface"
+                            className="metadata-input"
                             placeholder="Ex: Belo Horizonte"
                             value={metadata.comarca}
                             onChange={handleChange('comarca')}
@@ -72,7 +72,7 @@ function MetadataForm({ metadata, onChange, onSubmit, isProcessing }: Props) {
                     <div className="relative group flex items-center w-full">
                         <select
                             id="nerMode"
-                            className="w-full bg-[#e7e8e9] border border-transparent rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-b-2 focus:border-b-[#003f87] transition-all text-on-surface appearance-none cursor-pointer"
+                            className="metadata-input cursor-pointer"
                             value={metadata.nerMode}
                             onChange={handleChange('nerMode')}
                         >
@@ -86,7 +86,7 @@ function MetadataForm({ metadata, onChange, onSubmit, isProcessing }: Props) {
                 </div>
             </div>
 
-            <div className="mt-10 pt-8 flex items-center justify-between border-t border-[#edeeef]" style={{ marginTop: '2.5rem', paddingTop: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #edeeef' }}>
+            <div className="mt-10 pt-8 flex items-center justify-between" style={{ marginTop: '2.5rem', paddingTop: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--color-surface-container-high)' }}>
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 anonymization-mask rounded-lg flex items-center justify-center" style={{ width: '2.5rem', height: '2.5rem' }}>
                         <span className="material-symbols-outlined text-tertiary">security</span>
@@ -103,7 +103,7 @@ function MetadataForm({ metadata, onChange, onSubmit, isProcessing }: Props) {
                     disabled={isProcessing}
                 >
                     {isProcessing ? 'Processando...' : 'Analisar e Revisar'}
-                    {!isProcessing && <span className="material-symbols-outlined ml-2">arrow_forward</span>}
+                    {!isProcessing && <span className="material-symbols-outlined ml-2">search</span>}
                 </button>
             </div>
         </div>

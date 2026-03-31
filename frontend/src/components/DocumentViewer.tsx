@@ -155,23 +155,25 @@ function DocumentViewer({
 
     return (
         <div className="w-full">
-            <div className="space-y-4 text-on-surface leading-relaxed font-body text-justify">
+            <div className="document-text-content document-page-margin text-justify">
                 {renderTextContent()}
-                
+
                 {currentPage < pages && (
-                    <div 
-                        className="py-12 mt-8 text-center text-on-surface-variant font-medium text-sm italic opacity-60 cursor-pointer hover:opacity-100 transition-opacity"
+                    <div
+                        className="document-page-break cursor-pointer"
+                        style={{ opacity: 0.7 }}
                         onClick={() => onPageChange(currentPage + 1)}
                     >
-                        — Continuação do documento na Página {currentPage + 1} —
+                        <span>Página {currentPage + 1}</span>
                     </div>
                 )}
                 {currentPage > 1 && (
-                    <div 
-                        className="py-4 text-center text-on-surface-variant font-medium text-sm italic opacity-60 cursor-pointer hover:opacity-100 transition-opacity"
+                    <div
+                        className="document-page-break cursor-pointer"
+                        style={{ opacity: 0.7 }}
                         onClick={() => onPageChange(currentPage - 1)}
                     >
-                        — Voltar para a Página {currentPage - 1} —
+                        <span>Página {currentPage - 1}</span>
                     </div>
                 )}
             </div>

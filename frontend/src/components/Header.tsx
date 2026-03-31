@@ -1,21 +1,66 @@
-function Header() {
+interface Props {
+    isDarkMode?: boolean;
+    onToggleDark?: () => void;
+}
+
+function Header({ isDarkMode, onToggleDark }: Props) {
     return (
-        <header className="bg-surface-bright flex justify-between items-center px-6 py-3 w-full border-b border-[#edeeef] z-50 shrink-0" style={{ borderBottom: '1px solid #edeeef' }}>
+        <header
+            className="flex justify-between items-center px-6 py-3 w-full shrink-0 z-50"
+            style={{
+                background: 'var(--color-surface-bright)',
+                borderBottom: '1px solid var(--color-surface-container)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+            }}
+        >
             <div className="flex items-center gap-8">
-                <div className="text-on-surface font-extrabold text-xl font-headline tracking-tighter" style={{ letterSpacing: '-0.05em' }}>
-                    TJMG Anonimizador
+                <div className="font-extrabold text-xl font-headline" style={{ letterSpacing: '-0.05em' }}>
+                    <span style={{ color: 'var(--color-primary)' }}>TJMG</span>
+                    <span style={{ color: 'var(--color-on-surface)', fontWeight: 400, margin: '0 2px' }}> </span>
+                    <span style={{ color: 'var(--color-accent)', fontWeight: 800 }}>Anonimizador</span>
                 </div>
                 <nav className="hidden md:flex gap-6 items-center">
-                    <a className="text-[#003f87] font-semibold border-b-2 border-[#003f87] font-headline tracking-tight text-lg py-1 no-underline" href="#">Resolução 615/CNJ</a>
+                    <a
+                        className="font-semibold font-headline tracking-tight text-lg py-1 no-underline"
+                        style={{
+                            color: 'var(--color-primary)',
+                            borderBottom: '2px solid var(--color-accent)',
+                            paddingBottom: '2px',
+                        }}
+                        href="#"
+                    >
+                        Resolução 615/CNJ
+                    </a>
                 </nav>
             </div>
-            <div className="flex items-center gap-4" style={{ display: 'flex', gap: '1rem' }}>
-                <button className="material-symbols-outlined text-[#424752] bg-transparent border-none hover:bg-[#e1e3e4] p-2 rounded-full transition-colors cursor-pointer text-[24px]">help_outline</button>
-                <button className="material-symbols-outlined text-[#424752] bg-transparent border-none hover:bg-[#e1e3e4] p-2 rounded-full transition-colors cursor-pointer text-[24px]">settings</button>
-                <div className="w-[1px] h-8 bg-[#edeeef] mx-2" style={{ width: '1px', height: '2rem', backgroundColor: '#edeeef' }}></div>
-                <button className="flex items-center gap-2 p-1 pl-3 bg-transparent border-none hover:bg-[#e1e3e4] rounded-full transition-colors cursor-pointer">
-                    <span className="text-sm font-bold text-on-surface font-headline mr-2">Tribunal Admin</span>
-                    <span className="material-symbols-outlined text-[32px] text-primary" style={{ fontVariationSettings: "'FILL' 1", fontSize: '32px' }}>account_circle</span>
+            <div className="flex items-center gap-3">
+                <button
+                    className="material-symbols-outlined bg-transparent border-none p-2 rounded-full transition-colors cursor-pointer"
+                    style={{ color: 'var(--color-on-surface-variant)', fontSize: '22px' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-surface-container)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                    help_outline
+                </button>
+                <button
+                    className="material-symbols-outlined bg-transparent border-none p-2 rounded-full transition-colors cursor-pointer"
+                    style={{ color: 'var(--color-on-surface-variant)', fontSize: '22px' }}
+                    onClick={onToggleDark}
+                    title={isDarkMode ? 'Modo claro' : 'Modo escuro'}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-surface-container)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                    {isDarkMode ? 'light_mode' : 'dark_mode'}
+                </button>
+                <div style={{ width: '1px', height: '2rem', background: 'var(--color-surface-container)', margin: '0 0.25rem' }} />
+                <button className="flex items-center gap-2 p-1 pl-3 bg-transparent border-none rounded-full transition-colors cursor-pointer"
+                    style={{ color: 'var(--color-on-surface)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-surface-container)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                    <span className="text-sm font-bold font-headline mr-1">Tribunal Admin</span>
+                    <div className="header-initials-avatar">TA</div>
                 </button>
             </div>
         </header>
