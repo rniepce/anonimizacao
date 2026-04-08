@@ -97,6 +97,20 @@ class Pseudonymizer:
             'RG': self._generate_rg,
             'OAB': self._generate_oab,
             'PROC_CNJ': self._generate_proc_cnj,
+            'PASSAPORTE': self._generate_passaporte,
+            'PLACA_VEICULO': self._generate_placa,
+            'CHAVE_PIX': self._generate_chave_pix,
+            'RENAVAM': self._generate_renavam,
+            'BENEFICIO_INSS': self._generate_beneficio_inss,
+            'CNS': self._generate_cns,
+            'SIAPE': self._generate_siape,
+            'REGISTRO_PROFISSIONAL': self._generate_registro_profissional,
+            'CTPS': self._generate_ctps,
+            'PIS_PASEP': self._generate_pis_pasep,
+            'TITULO_ELEITOR': self._generate_titulo_eleitor,
+            'CNH': self._generate_cnh,
+            'CONTA_BANCARIA': self._generate_conta_bancaria,
+            'AGENCIA': self._generate_agencia,
         }
 
     def _get_deterministic_random(self, valor: str) -> random.Random:
@@ -329,6 +343,107 @@ class Pseudonymizer:
         oooo = rng.randint(1000, 9999)  # Origem
 
         return f"{nnnnnnn:07d}-{dd:02d}.{aaaa}.{j}.{tr:02d}.{oooo:04d}"
+
+    def _generate_passaporte(self, valor: str) -> str:
+        """Gera número de passaporte fake (2 letras + 6 dígitos)"""
+        rng = self._get_deterministic_random(valor)
+        letras = ''.join(rng.choices('ABCDEFGHJKLMNPQRSTUVWXYZ', k=2))
+        digitos = ''.join([str(rng.randint(0, 9)) for _ in range(6)])
+        return f"{letras}{digitos}"
+
+    def _generate_placa(self, valor: str) -> str:
+        """Gera placa de veículo fake — formato Mercosul (ABC1D23)"""
+        rng = self._get_deterministic_random(valor)
+        letras = ''.join(rng.choices('ABCDEFGHJKLMNPQRSTUVWXYZ', k=3))
+        digito1 = rng.randint(0, 9)
+        letra_meio = rng.choice('ABCDEFGHJKLMNPQRSTUVWXYZ')
+        digitos_fim = ''.join([str(rng.randint(0, 9)) for _ in range(2)])
+        return f"{letras}{digito1}{letra_meio}{digitos_fim}"
+
+    def _generate_chave_pix(self, valor: str) -> str:
+        """Gera chave PIX aleatória fake (UUID v4)"""
+        import uuid
+        rng = self._get_deterministic_random(valor)
+        # Gerar UUID determinístico baseado no seed
+        fake_bytes = bytes([rng.randint(0, 255) for _ in range(16)])
+        return str(uuid.UUID(bytes=fake_bytes, version=4))
+
+    def _generate_renavam(self, valor: str) -> str:
+        """Gera RENAVAM fake (11 dígitos)"""
+        rng = self._get_deterministic_random(valor)
+        digitos = ''.join([str(rng.randint(0, 9)) for _ in range(11)])
+        return digitos
+
+    def _generate_beneficio_inss(self, valor: str) -> str:
+        """Gera número de benefício INSS fake (NB: 10 dígitos com dígito verificador)"""
+        rng = self._get_deterministic_random(valor)
+        digitos = ''.join([str(rng.randint(0, 9)) for _ in range(9)])
+        dv = rng.randint(0, 9)
+        nb = digitos + str(dv)
+        return f"{nb[:3]}.{nb[3:6]}.{nb[6:9]}-{nb[9]}"
+
+    def _generate_cns(self, valor: str) -> str:
+        """Gera CNS (Cartão Nacional de Saúde) fake (15 dígitos)"""
+        rng = self._get_deterministic_random(valor)
+        primeiro = rng.choice([1, 2, 7, 8, 9])
+        resto = ''.join([str(rng.randint(0, 9)) for _ in range(14)])
+        return f"{primeiro}{resto}"
+
+    def _generate_siape(self, valor: str) -> str:
+        """Gera matrícula SIAPE fake (7 dígitos)"""
+        rng = self._get_deterministic_random(valor)
+        return ''.join([str(rng.randint(0, 9)) for _ in range(7)])
+
+    def _generate_registro_profissional(self, valor: str) -> str:
+        """Gera registro profissional fake (CRM/CREA/CRP/etc.)"""
+        rng = self._get_deterministic_random(valor)
+        # Detectar o tipo de registro no valor original
+        prefixos = ["CRM", "CREA", "CRP", "CRO", "COREN", "CRF", "CRC"]
+        prefixo = "CRM"
+        for p in prefixos:
+            if p.lower() in valor.lower():
+                prefixo = p
+                break
+        ufs = ["MG", "SP", "RJ", "RS", "BA", "PR", "SC", "GO", "PE", "CE"]
+        uf = rng.choice(ufs)
+        numero = rng.randint(10000, 999999)
+        return f"{prefixo}/{uf} {numero}"
+
+    def _generate_ctps(self, valor: str) -> str:
+        """Gera número CTPS fake"""
+        rng = self._get_deterministic_random(valor)
+        return ''.join([str(rng.randint(0, 9)) for _ in range(7)])
+
+    def _generate_pis_pasep(self, valor: str) -> str:
+        """Gera PIS/PASEP fake (11 dígitos com formatação)"""
+        rng = self._get_deterministic_random(valor)
+        d = ''.join([str(rng.randint(0, 9)) for _ in range(11)])
+        return f"{d[:3]}.{d[3:8]}.{d[8:10]}-{d[10]}"
+
+    def _generate_titulo_eleitor(self, valor: str) -> str:
+        """Gera título de eleitor fake (12 dígitos)"""
+        rng = self._get_deterministic_random(valor)
+        d = ''.join([str(rng.randint(0, 9)) for _ in range(12)])
+        return f"{d[:4]} {d[4:8]} {d[8:12]}"
+
+    def _generate_cnh(self, valor: str) -> str:
+        """Gera número de CNH fake (11 dígitos)"""
+        rng = self._get_deterministic_random(valor)
+        return ''.join([str(rng.randint(0, 9)) for _ in range(11)])
+
+    def _generate_conta_bancaria(self, valor: str) -> str:
+        """Gera número de conta bancária fake"""
+        rng = self._get_deterministic_random(valor)
+        numero = ''.join([str(rng.randint(0, 9)) for _ in range(8)])
+        dv = rng.randint(0, 9)
+        return f"{numero}-{dv}"
+
+    def _generate_agencia(self, valor: str) -> str:
+        """Gera número de agência bancária fake"""
+        rng = self._get_deterministic_random(valor)
+        numero = ''.join([str(rng.randint(0, 9)) for _ in range(4)])
+        dv = rng.randint(0, 9)
+        return f"{numero}-{dv}"
 
     def get_mapping_report(self) -> Dict[str, list]:
         """
