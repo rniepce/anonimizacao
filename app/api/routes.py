@@ -28,8 +28,8 @@ from app.api.schemas import (
     SelectiveAnonymizeRequest,
     AllowlistEntry,
 )
-from app.core.pipeline import get_pipeline
-from app.core.allowlist import allowlist_manager, AllowlistItem
+# Imports pesados deferidos para reduzir tempo de startup
+# (pipeline carrega PyMuPDF, regex_matcher, pdf_handler no import)
 from app.core.progress import progress_manager
 from app.audit.logger import audit_logger
 
@@ -134,6 +134,8 @@ async def analyze_document(
     Analisa um documento e identifica dados sensíveis.
     Não aplica anonimização, apenas retorna preview.
     """
+    from app.core.pipeline import get_pipeline
+
     content = await file.read()
     validate_file(file, content_bytes=content)
     safe_name = sanitize_filename(file.filename or "upload")
@@ -198,6 +200,8 @@ async def analyze_preview(
     Analisa documento, gera PDF com destaques visuais e retorna
     as entidades identificadas para revisão interativa.
     """
+    from app.core.pipeline import get_pipeline
+
     content = await file.read()
     validate_file(file, content_bytes=content)
     safe_name = sanitize_filename(file.filename or "upload")
@@ -501,6 +505,8 @@ async def anonymize_document(
     - redact: Aplica tarjas pretas (padrão)
     - pseudonymize: Substitui por dados fake consistentes
     """
+    from app.core.pipeline import get_pipeline
+
     file_content = await file.read()
     validate_file(file, content_bytes=file_content)
     safe_name = sanitize_filename(file.filename or "upload")
@@ -571,6 +577,8 @@ async def anonymize_document_json(
     Anonimiza um documento e retorna metadados JSON.
     Use /download/{job_id} para baixar o arquivo.
     """
+    from app.core.pipeline import get_pipeline
+
     # FIX: ler conteúdo antes para validar magic bytes corretamente
     content = await file.read()
     validate_file(file, content_bytes=content)
@@ -696,6 +704,8 @@ async def add_to_allowlist(entry: AllowlistEntry):
     """
     Adiciona item à lista branca.
     """
+    from app.core.allowlist import allowlist_manager, AllowlistItem
+
     item = AllowlistItem(
         nome=entry.nome,
         tipo=entry.tipo,
@@ -712,6 +722,8 @@ async def list_allowlist(tipo: Optional[str] = None):
     """
     Lista itens da lista branca.
     """
+    from app.core.allowlist import allowlist_manager
+
     items = allowlist_manager.list_all(tipo)
     return {
         "total": len(items),
@@ -727,6 +739,8 @@ async def remove_from_allowlist(nome: str):
     """
     Remove item da lista branca.
     """
+    from app.core.allowlist import allowlist_manager
+
     if allowlist_manager.remove_item(nome):
         return {"message": f"'{nome}' removido da lista branca"}
 
@@ -738,6 +752,8 @@ async def get_allowlist_stats():
     """
     Retorna estatísticas da lista branca.
     """
+    from app.core.allowlist import allowlist_manager
+
     return allowlist_manager.get_stats()
 
 

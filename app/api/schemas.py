@@ -33,8 +33,17 @@ class SensitiveDataType(str, Enum):
     CNH = "CNH"
     CONTA_BANCARIA = "CONTA_BANCARIA"
     AGENCIA = "AGENCIA"
+    PASSAPORTE = "PASSAPORTE"
+    PLACA_VEICULO = "PLACA_VEICULO"
+    CHAVE_PIX = "CHAVE_PIX"
+    RENAVAM = "RENAVAM"
+    BENEFICIO_INSS = "BENEFICIO_INSS"
+    CNS = "CNS"  # Cartão Nacional de Saúde
+    SIAPE = "SIAPE"  # Matrícula de servidor federal
+    REGISTRO_PROFISSIONAL = "REGISTRO_PROFISSIONAL"  # CRM, CREA, CRP, etc.
     ROSTO = "ROSTO"  # Rosto detectado em scan (dado biométrico)
     ASSINATURA = "ASSINATURA"  # Assinatura manuscrita em scan
+    CARIMBO = "CARIMBO"  # Carimbo detectado em scan
     OUTRO = "OUTRO"
 
 
