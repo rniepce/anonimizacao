@@ -3,6 +3,7 @@ TJMG Anonymizer Pipeline - FastAPI Application
 """
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,6 +19,24 @@ from app.api.routes import router
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+
+def _get_memory_info() -> str:
+    """Retorna uso de memória do processo (para diagnóstico de OOM)."""
+    try:
+        import resource
+        # RSS em KB (Linux/Mac)
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # No Linux, ru_maxrss é em KB; no Mac, em bytes
+        import sys
+        if sys.platform == 'darwin':
+            rss_mb = rss_kb / (1024 * 1024)
+        else:
+            rss_mb = rss_kb / 1024
+        return f"{rss_mb:.0f}MB RSS"
+    except Exception:
+        return "N/A"
 
 # ─── Rate Limiter ─────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
@@ -53,12 +72,20 @@ async def _preload_models() -> None:
     Pré-carrega modelos NER em background.
     Executado como asyncio.create_task para não bloquear o startup do uvicorn.
     O servidor responde ao healthcheck imediatamente enquanto os modelos carregam.
+
+    Desativado em Railway (RAILWAY_ENVIRONMENT definido) — em containers com
+    memória limitada, o warm-up pode causar OOM antes do healthcheck passar.
+    Os modelos serão carregados lazy na primeira requisição.
     """
-    # Pequena espera para o servidor subir completamente
-    await asyncio.sleep(2)
+    # Desativar warm-up em ambiente Railway ou via variável de ambiente
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("TJMG_SKIP_WARMUP"):
+        logger.info("⏭️ Warm-up de modelos desativado (Railway/container) — carregamento lazy na 1ª requisição")
+        return
+
+    # Espera generosa para o servidor subir completamente e healthcheck passar
+    await asyncio.sleep(30)
     try:
         loop = asyncio.get_event_loop()
-        import functools
 
         def _load():
             from app.core.pipeline import get_pipeline
@@ -79,7 +106,8 @@ async def lifespan(app: FastAPI):
     - Startup: dispara warm-up de modelos e limpeza em background (não bloqueia)
     - Shutdown: cancela tasks de background
     """
-    logger.info("🚀 Servidor iniciando — modelos NER carregando em background...")
+    logger.info("🚀 Servidor iniciando — /health disponível imediatamente")
+    logger.info(f"   RAM disponível: {_get_memory_info()}")
 
     # Iniciar pré-carregamento de modelos em background (não bloqueia o startup)
     warmup_task = asyncio.create_task(_preload_models())
