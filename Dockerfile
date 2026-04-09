@@ -17,6 +17,12 @@ ENV PYTHONUNBUFFERED=1
 ENV MALLOC_ARENA_MAX=2
 ENV OMP_NUM_THREADS=1
 ENV MKL_NUM_THREADS=1
+# HuggingFace cache dentro de /app (acessível pelo appuser)
+ENV HF_HOME=/app/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface/hub
+# Prevenir tentativas de download em runtime (modelo pré-baixado no build)
+ENV TRANSFORMERS_OFFLINE=1
+ENV HF_HUB_OFFLINE=1
 
 # Instalar dependências de sistema
 # Tesseract mantido como OCR para PDFs escaneados (ativado condicionalmente pelo pipeline)
@@ -48,7 +54,8 @@ RUN pip install --no-cache-dir https://github.com/explosion/spacy-models/release
 COPY . .
 
 # Pré-baixar BERTimbau (NER primário) durante o build
-RUN python -c "from transformers import pipeline; pipeline('ner', model='pierreguillou/bert-base-cased-pt-lenerbr', aggregation_strategy='simple')" \
+# Temporariamente desabilitar offline mode para baixar o modelo
+RUN HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python -c "from transformers import pipeline; pipeline('ner', model='pierreguillou/bert-base-cased-pt-lenerbr', aggregation_strategy='simple')" \
     || echo "Aviso: BERTimbau será baixado na primeira execução"
 
 # Copiar build do frontend
@@ -58,6 +65,7 @@ COPY --from=frontend-build /frontend/dist ./frontend/dist
 RUN mkdir -p logs data/uploads data/allowlist
 
 # Usuário não-root por segurança
+# chown -R garante que o cache HF + dados são acessíveis pelo appuser
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
